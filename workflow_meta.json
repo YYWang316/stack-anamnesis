@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "name": "stack-anamnesis",
   "codename": "equiforge",
-  "description": "End-to-end equity research + social card pipeline built on the Anamnesis Pattern (cross-session institutional memory + scheduled adversarial review). Persistent knowledge base, four-layer audit, two attacker agents, incident pre/post-check bracket. Fuses skills_repo/er and skills_repo/ep under a single orchestrator.",
+  "description": "End-to-end crypto-payments-stack research harness built on the Anamnesis Pattern (cross-session institutional memory + scheduled adversarial review). Research lens: stack-position defensibility across the five payment-stack classes defined in references/subject_taxonomy.md.",
   "phases": [
     {
       "id": "P_INCIDENT_PRECHECK",
@@ -16,44 +16,64 @@
       "reads": ["INCIDENTS.md"]
     },
     {
-      "id": "P0_intent",
-      "produces": ["meta/run.json:ticker", "meta/run.json:company", "meta/run.json:listing"],
+      "id": "P0_subject_class",
+      "produces": [
+        "meta/run.json:subject",
+        "meta/run.json:primary_class",
+        "meta/gates.json:subject_class.value",
+        "meta/gates.json:subject_class.source",
+        "meta/gates.json:subject_class.rationale"
+      ],
       "blocking": true,
       "interactive": false,
       "parallelism": "sequential",
-      "agent": "agents/intent_resolver.md",
-      "tools": ["tools/web/search.py"],
-      "fail_action": "ask user to provide ticker explicitly"
+      "inline": true,
+      "reads": ["references/subject_taxonomy.md"],
+      "values": ["stablecoin_issuer", "orchestrator", "wallet", "chain", "agentic_payment_layer"],
+      "fail_action": "if after one clarifying question the subject still does not fit any of the five classes, record event 'not_in_taxonomy' in meta/run.jsonl and halt; do not invent a sixth class; do not force-fit"
     },
     {
-      "id": "P0_lang",
-      "produces": ["meta/run.json:report_language"],
+      "id": "P0_output_format",
+      "produces": [
+        "meta/run.json:output_format",
+        "meta/gates.json:output_format.value",
+        "meta/gates.json:output_format.source"
+      ],
       "blocking": true,
       "interactive": true,
       "parallelism": "sequential",
-      "agent": "agents/language_gate.md",
-      "values": ["en", "zh"],
-      "sticky_source": "USER.md:default_language"
+      "inline": true,
+      "values": ["report", "thread"],
+      "sticky_source": "USER.md:default_output_format"
     },
     {
-      "id": "P0_sec_email",
-      "produces": ["meta/run.json:sec_email", "meta/run.json:sec_user_agent", "meta/run.json:public_user_agent"],
+      "id": "P0_scope",
+      "produces": [
+        "meta/run.json:scope",
+        "meta/gates.json:scope.value",
+        "meta/gates.json:scope.source"
+      ],
       "blocking": true,
       "interactive": true,
       "parallelism": "sequential",
-      "agent": "agents/sec_email_gate.md",
-      "applies_when": "listing == 'US' and mode == 'A'",
-      "sticky_source": "USER.md:default_sec_email"
+      "inline": true,
+      "values": ["single"],
+      "sticky_source": "USER.md:default_scope"
     },
     {
-      "id": "P0_palette",
-      "produces": ["meta/run.json:palette"],
+      "id": "P0_freshness",
+      "produces": [
+        "meta/run.json:freshness",
+        "meta/gates.json:freshness.value",
+        "meta/gates.json:freshness.source",
+        "meta/gates.json:freshness.suggested_by_class"
+      ],
       "blocking": true,
       "interactive": true,
       "parallelism": "sequential",
-      "agent": "agents/palette_gate.md",
-      "values": ["macaron", "default", "b", "c"],
-      "sticky_source": "USER.md:default_palette"
+      "inline": true,
+      "values": ["7d", "30d", "90d", "since_TGE"],
+      "sticky_source": "USER.md:default_freshness"
     },
     {
       "id": "P0M_meta",

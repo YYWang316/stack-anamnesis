@@ -1,6 +1,6 @@
 ---
 schema_version: 1
-description: Prose explanation of the Stack Anamnesis pipeline — what each phase does, what blocks, what runs in parallel, where outputs land. Read this for the phase narrative; read workflow_meta.json for the machine-readable contract. The contract is bracketed by an incident pre-check before P0_intent and an incident post-check before P_DB_INDEX; report and card pipelines are each followed by a parallel red-team review.
+description: Prose explanation of the Stack Anamnesis pipeline — what each phase does, what blocks, what runs in parallel, where outputs land. Read this for the phase narrative; read workflow_meta.json for the machine-readable contract. The contract is bracketed by an incident pre-check before P0_subject_class and an incident post-check before P_DB_INDEX; report and card pipelines are each followed by a parallel red-team review.
 ---
 
 # Phase contract
@@ -16,10 +16,10 @@ The prose below uses dotted shorthand (P1.5, P3.6, P5.7) that maps to canonical 
 | Section narrative | Canonical id |
 |---|---|
 | Incident pre-check | `P_INCIDENT_PRECHECK` |
-| P0 — intent | `P0_intent` |
-| P0 — language | `P0_lang` |
-| P0 — SEC email | `P0_sec_email` |
-| P0 — palette | `P0_palette` |
+| P0 — subject class (resolution) | `P0_subject_class` |
+| P0 — output format (interactive) | `P0_output_format` |
+| P0 — scope (interactive) | `P0_scope` |
+| P0 — freshness (interactive) | `P0_freshness` |
 | P0 — meta validation | `P0M_meta` |
 | P0 — DB precheck | `P0_DB_PRECHECK` |
 | P1 — parallel research | `P1_parallel_research` |
@@ -53,7 +53,7 @@ The prose below uses dotted shorthand (P1.5, P3.6, P5.7) that maps to canonical 
 
 ```
 P_INCIDENT_PRECHECK ★
-  → P0_intent → P0_lang → P0_sec_email → P0_palette → P0M_meta → P0_DB_PRECHECK
+  → P0_subject_class → P0_output_format → P0_scope → P0_freshness → P0M_meta → P0_DB_PRECHECK
   → P1 parallel research (financial / macro / news, 3 subagents)
   → P1.5 edge insight
   → P2 financial analysis
@@ -86,7 +86,7 @@ P_INCIDENT_PRECHECK ★
 
 ## P_INCIDENT_PRECHECK — institutional memory, read first
 
-Runs **before** `P0_intent`. The orchestrator reads `INCIDENTS.md` end-to-end and writes one event to `meta/run.jsonl` per entry:
+Runs **before** `P0_subject_class`. The orchestrator reads `INCIDENTS.md` end-to-end and writes one event to `meta/run.jsonl` per entry:
 
 ```json
 {"phase": "P_INCIDENT_PRECHECK", "event": "incident_precheck.acknowledged", "incident_id": "I-001", "ack": "<one-line acknowledgement>"}
@@ -100,14 +100,14 @@ This phase is short, cheap, and non-skippable. A run that did not pre-check is n
 
 | Phase | Purpose |
 |---|---|
-| `P0_intent` | Resolve `{ticker, company, listing}`. See `references/p0_gates.md`. |
-| `P0_lang` | `report_language ∈ {en, zh}`. Blocking. |
-| `P0_sec_email` | SEC EDGAR `User-Agent` email if US-listed mode A. Blocking. |
-| `P0_palette` | One of `{macaron, default, b, c}`. Blocking. |
+| `P0_subject_class` | Resolve `{subject, primary_class}` against the five-class enum in `references/subject_taxonomy.md`. Resolution gate. See `references/p0_gates.md`. |
+| `P0_output_format` | `output_format ∈ {report, thread}`. Interactive. |
+| `P0_scope` | `scope ∈ {single}` (Phase A enum). Interactive; gate still runs even at 1-value enum to surface wrong-granularity prompts. |
+| `P0_freshness` | `freshness ∈ {7d, 30d, 90d, since_TGE}`. Interactive; class-default is a suggestion, not an inference. |
 | `P0M_meta` | Validate `workflow_meta.json` schema (`tools/research/validate_workflow_meta.py`). |
-| `P0_DB_PRECHECK` | Lookups for prior financials, peer companies, fresh macro snapshot. Never blocks. See `references/cross_quarter.md`. |
+| `P0_DB_PRECHECK` | Lookups for prior financials, peer companies, fresh macro snapshot. Never blocks. See `references/cross_quarter.md`. (Equity-era table shape; Phase B will redefine the precheck queries for the crypto taxonomy.) |
 
-**Hard floor for P0_lang / P0_sec_email / P0_palette:** the only allowed `meta/gates.json -> source` values are `user_response`, `USER.md sticky`, plus per-gate whitelist extras. Auto mode does not waive these — see `INCIDENTS.md` I-001.
+**Hard floor for P0_output_format / P0_scope / P0_freshness:** the only allowed `meta/gates.json -> source` values are `user_response` and `USER.md sticky`. Auto mode does not waive these. `P0_subject_class` is a resolution gate and additionally accepts `prompt_unambiguous`.
 
 ## P1–P3.7 — research pipeline (ER)
 

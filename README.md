@@ -1,5 +1,5 @@
 <!--
-keywords: Stack Anamnesis, Anamnesis Pattern, agent institutional memory, closed-loop agent harness, agent failure log, adversarial AI audit, equity research AI, agent self-correction, cross-session agent memory, harness design, red-team AI agents, CFRV cycle, veteran agent pattern
+keywords: Stack Anamnesis, Anamnesis Pattern, crypto payments research, agentic payments, stablecoin issuer analysis, payment orchestrator research, wallet defensibility, chain research, x402 protocol, AP2 agent payments, stack-position defensibility, agent institutional memory, closed-loop agent harness, agent failure log, adversarial AI audit, cross-session agent memory, harness design, red-team AI agents, CFRV cycle, veteran agent pattern
 -->
 
 > Built on the **Anamnesis Pattern** (originally developed in the upstream
@@ -13,7 +13,9 @@ keywords: Stack Anamnesis, Anamnesis Pattern, agent institutional memory, closed
 
 # Stack Anamnesis
 
-> **An equity-research harness built on the Anamnesis Pattern — cross-session institutional memory + scheduled adversarial review.**
+> **A crypto-payments-stack research harness built on the Anamnesis Pattern — cross-session institutional memory + scheduled adversarial review.**
+>
+> **Research lens:** stack-position defensibility across the five layers of the payments stack — stablecoin issuers, payment orchestrators, wallets, chains, and agentic-payment protocols (x402 / AP2 / agent SDKs). One subject per run, classified at `P0_subject_class` against the five-class taxonomy in `references/subject_taxonomy.md`.
 >
 > *(Originally codenamed `equiforge` in early development; the codename is retained only as a historical field in `workflow_meta.json` and as the SQLite database name. Everything user-facing — CLI, docs, agent descriptions — is **Stack Anamnesis**.)*
 
