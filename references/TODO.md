@@ -190,6 +190,29 @@ Original premise: `scope_gate` path (a) narrow needed an internal restart-from-g
 
 ---
 
+## TD-017 — Extend subject_relationships.yaml schema for token entries
+
+**Status:** active 2026-05-13 (opened during B.0 Step 3c review).
+
+Current subject_relationships.yaml schema is company-centric — all 6 seed entries (Circle, Coinbase, Stripe, Galaxy Digital, Marathon Digital, Robinhood) are subject_entity_type: company with fields {listed, ticker, exchange, parent}. No token entries; no tge_date field exists.
+
+agents/freshness_gate.md Step 1 reads {Subject}.tge_date from the yaml to compute the since_TGE hint sentence ("USDC 的 TGE 是 2018-09-26, since_TGE 会拉 ~8 年完整历史."). With no tge_date in the schema, the hint silently omits — graceful degradation works, but the user-facing since_TGE option loses helpful context.
+
+**Required:**
+
+1. Add `tge_date: <ISO date>` field to entries of subject_entity_type: token (and asset/coin where applicable).
+2. Optionally: add `token_symbol` field for tokens whose ticker differs from primary name (e.g., USDC issued by Circle).
+3. Backfill tge_date for at least a few high-priority tokens (USDC, USDT, ETH, BTC, etc.) so freshness_gate's since_TGE hint becomes useful for common research subjects.
+4. Update references/subject_relationships_design.md to document the extended schema (token entry shape).
+
+**Why deferred:** B.0 scope is design + agent spec; no data file schema extensions. Extending the yaml schema would require updating multiple cross-referenced files (research_dimensions.md, subject_relationships_design.md) and is appropriately B.1 work.
+
+**Revisit when:** B.1 first token-based research is attempted (USDC, USDT, etc.) — the missing tge_date hint will be immediately noticeable in user-facing prompts. Bundle the schema extension with that first fetcher work.
+
+**History:** Surfaced during B.0 Step 3c review of agents/freshness_gate.md.
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 7-gate set) is executed. This is a recurring slot — append new lessons as they emerge.
