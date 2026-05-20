@@ -190,6 +190,32 @@ Original premise: `scope_gate` path (a) narrow needed an internal restart-from-g
 
 ---
 
+## TD-016 — Repoint user_agent_pii.py PUBLIC_USER_AGENT to StackAnamnesis/<version>
+
+**Status:** active 2026-05-13 (opened during B.0 #1.5 SEC EDGAR work; backfilled 2026-05-13).
+
+tools/audit/user_agent_pii.py hardcodes:
+```
+PUBLIC_USER_AGENT = "EquityResearchSkill/1.0"
+```
+
+This was the equity-era slug. references/data_source_registry.md §6 (B.0 #1.5) established the new canonical:
+```
+PUBLIC_USER_AGENT = "StackAnamnesis/1.0"
+```
+
+And agents/sec_email_gate.md (B.0 Step 3b) emits sec_user_agent using "StackAnamnesis/1.0 (<email>)" per spec. Until tools/audit/user_agent_pii.py is repointed, P12 audit will fail on the slug mismatch.
+
+**Required:** one-line edit in tools/audit/user_agent_pii.py to update the hardcoded slug from "EquityResearchSkill/1.0" to "StackAnamnesis/<version>". Consider parameterizing via env var or shared constant if multiple consumers need the slug.
+
+**Why deferred:** B.0 scope is documentation + agent contracts, no new or modified tooling. The repoint is trivial (one-line edit) but belongs in B.1 alongside the first SEC EDGAR fetcher invocation when audit actually runs and the slug mismatch would surface.
+
+**Revisit when:** B.1 first SEC EDGAR fetcher invocation OR P12 audit first runs in B.1 — whichever lands earlier.
+
+**History:** Surfaced during B.0 #1.5 (SEC EDGAR consumer contract in data_source_registry.md) when canonical slug "StackAnamnesis/1.0" was established. Cross-referenced in agents/sec_email_gate.md (Step 3b) and agents/freshness_gate.md (Step 3c). Backfilled into TODO.md during Step 3c review when cross-reference was found dangling.
+
+---
+
 ## TD-017 — Extend subject_relationships.yaml schema for token entries
 
 **Status:** active 2026-05-13 (opened during B.0 Step 3c review).
