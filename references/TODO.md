@@ -395,3 +395,95 @@ When forking a harness for a new domain, the inherited framework's shape (gate c
 **Applies to:** any fork or domain extension. Before adopting inherited framework, walk through the new domain's actual user workflow end-to-end and verify each framework element earns its place. Default to fewer abstractions, not more.
 
 **Detection signal:** if you can't immediately answer "what does GATE_X do for THIS user's workflow", that gate may be over-engineering. The answer should be specific to the new domain, not generic.
+
+---
+
+# B.0 Restart — Completion Declaration
+
+**Status: COMPLETE 2026-05-21.** Steps 1-6 shipped; Step 7 deferred 
+to B.5+ (template reconciliation deferred per TD-019).
+
+## Commits (12 total)
+
+1. 7c2d42a + 50fbeb9 — Step 1: clean slate
+2. f927c9d — Step 2: research_dimensions.md (canonical 4-gate contract)
+3. bbf2589 — Step 3a: agents/subject_confirm_gate.md
+4. 27581a2 — Step 3b: agents/sec_email_gate.md
+5. b065055 — Step 3c: agents/freshness_gate.md (+ TD-017 opened)
+6. 871b033 — TD-016 backfill (user_agent slug)
+7. 0285778 — Step 3d: agents/language_gate.md
+8. 5972d70 + 1428d63 — Pre-Step-4 cleanup (TD-002 re-scoped, TD-003 
+   closed, TD-018/TD-019 opened, .gitignore deduped, palette_gate + 
+   intent_resolver removed)
+9. 3cabd18 — Step 4: data_source_registry.md §7-§13 (+ TD-020 opened)
+10. cfe666b — Step 5: wire-up (workflow_meta.json + p0_gates.md + 
+    phase_contract.md + TD-018 item 7)
+11. d2d6544 — Step 6: MEMORY.md rewrite + INCIDENTS.md sweep + 4 
+    lessons LANDED
+
+## Final design state
+
+- **4 canonical gates**: subject_confirm / sec_email (conditional) / 
+  freshness / language
+- **13 registered data sources**: 6 core (§1-§6) + 7 conditional 
+  (§7-§13)
+- **5 subject classes**: stablecoin_issuer, orchestrator, wallet, 
+  chain, agentic_payment_layer (single-subject only; sector → Phase C)
+- **2 writer modes**: monolingual (en/zh) + dual writer (both) + 
+  bilingual writer (side_by_side)
+- **I-003 two-UA invariant**: sec_user_agent (SEC EDGAR only) + 
+  public_user_agent (all else)
+- **No sticky, no USER.md, no defaults on non-answer**
+
+## TD ledger handoff to B.1+
+
+**Closed in B.0**:
+- TD-003 (365d freshness — resolved by 4-gate enum)
+- TD-009 (SEC EDGAR secret pattern — instantiated in B.0 #1.5)
+- TD-014 (event vocabulary registry — unnecessary at current scale)
+- TD-015 (orchestrator restart-from-gate — design moved to 
+  abort+re-run)
+
+**Active, transferred to B.1**:
+- TD-001 (X long-post quality rubric — design at first thread run)
+- TD-002 (sector / comparison expansion — Phase C)
+- TD-004 (issuer attestation feeds)
+- TD-005 (CEX APIs)
+- TD-006 (locked-skeleton template — paired with crypto report 
+  skeleton design)
+- TD-007 (QC merge math + competitive framework — Phase B writer)
+- TD-008 (card-pack rules — paired with card pipeline rebuild)
+- TD-010 (orchestrator §P1+ + HARNESS rewrite — Phase B pipeline)
+- TD-011 (validate seed CIKs — paired with first SEC EDGAR fetcher)
+- TD-012 (lint_subject_relationships.py — B.1 paired)
+- TD-013 (append_subject_entry.py — B.1 paired)
+- TD-016 (user_agent_pii.py slug repoint — B.1 paired)
+- TD-017 (yaml schema for tokens — B.1 first token research)
+- TD-018 (Gen 1/2 residue sweep, 7 files — each file's rewrite step)
+- TD-019 (crypto_report_template.md reconcile — B.5 writer design 
+  paired)
+- TD-020 (B.1 verification of Medium-confidence sources)
+
+**B.1 deliverables blocked by active TDs**: see TD-011, TD-012, 
+TD-013, TD-016 for B.1's first SEC EDGAR fetcher dependencies.
+
+## Mid-flight lessons preserved (now in MEMORY.md)
+
+The 4 design lessons from B.0 #16 staging are now in MEMORY.md 
+under 'Design lessons (load-bearing methodology)' and frozen into 
+the system prompt at session start. TODO.md retains the full lesson 
+bodies + Origin sections as audit trail of what was migrated.
+
+## What B.1 does NOT touch from B.0
+
+- 4-gate design (frozen — any change requires explicit mid-flight 
+  declaration per Lesson 4)
+- research_dimensions.md (canonical contract — read by all phases)
+- 4 gate agent files (referenced by orchestrator)
+- p0_gates.md (enforcement contract)
+- workflow_meta.json phase array order
+- MEMORY.md invariants
+
+B.1 reads these as fixed contracts. Changes to these files in B.1 
+require either: (a) explicit user approval with rationale, OR 
+(b) opening a new TD that documents the proposed change.
