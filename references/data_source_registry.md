@@ -5,7 +5,7 @@ description: Canonical registry of external data sources for Stack Anamnesis. Ea
 
 # Data Source Registry
 
-This file is the **canonical contract** for which external data sources Stack Anamnesis is allowed to call, what each one provides, and what its limits are. Six sources are registered:
+This file is the **canonical contract** for which external data sources Stack Anamnesis is allowed to call, what each one provides, and what its limits are. **Six core sources** (always considered) are registered, followed by **seven conditional non-core sources** (§7–§13) enabled per `subject_class`. The six core sources:
 
 1. **DefiLlama** — protocol/chain TVL, stablecoin caps, yields. Free.
 2. **Dune** — custom SQL across indexed chains. Mixed free/paid.
@@ -240,6 +240,261 @@ This is the **only data source in the registry** that carries the operator's ema
 
 ---
 
+# Conditional non-core sources (§7–§13)
+
+The following seven sources are **conditional**: enabled per-run only when the subject's `subject_class` (per `references/subject_taxonomy.md`) and the dispatch logic in `references/research_dimensions.md` §3 call for them. Unlike the six core sources above, none is always-on. All use `public_user_agent` — **none** carries the operator email (only SEC EDGAR §6 does). Each entry names its forward-referenced B.1 fetcher (not yet written). The trigger conditions below are **dispatch hints, not hard rules** — the dispatch logic in `research_dimensions.md` §3 is the authority.
+
+---
+
+## 7. Artemis
+
+**Domain.** `app.artemisanalytics.com` / `api.artemisanalytics.com` (API). Documentation: `docs.artemis.xyz`. Homepage: `artemis.xyz`.
+
+**Auth.** API key required. Free **"Lite"** tier to start; **Professional** and **Enterprise** paid tiers (Enterprise adds Snowflake data share + custom API).
+
+**Rate limit.** Not published per-tier; the free Lite tier is metric- and volume-limited rather than documented as a req/sec cap. **Hard rule for this harness**: treat as 1 req/sec with 200ms jitter until a tier-specific limit is confirmed. *(Exact free-tier limits unconfirmed — see review flag.)*
+
+**What you get.**
+- Cross-chain comparison of revenue, fees, TVL, active addresses, and volumes across 12,000+ tokens and 50+ chains.
+- Stablecoin analytics — supply by issuer and per-chain split, issuer transfer volumes.
+- Cross-chain flow data and developer-activity series.
+- Daily / weekly / monthly granularity with history.
+
+**Trigger conditions (when to enable).**
+- `stablecoin_issuer` — cross-chain supply split and issuer volume comparison.
+- Multi-chain protocols where a cross-chain user/volume comparison is the question.
+
+**Do NOT use for.**
+- Raw single-chain transaction data (use Etherscan family §3 / RPC §5).
+- Ground-truth reserve reads (use RPC `eth_call` §5).
+- Primary price feed (use CoinGecko §4).
+
+**Documented quirks.**
+- Free Lite metric coverage is materially narrower than Professional — a missing metric on Lite is a tier limit, not a data gap.
+- Cross-chain figures are **Artemis-normalised**; their TVL/revenue definitions differ from DefiLlama's — do not mix the two series as if identical.
+- Per-tier rate limits are undocumented; pace conservatively.
+
+**User-Agent.** `public_user_agent` (NOT `sec_user_agent`) — PII-free, identical across all runs.
+
+**Relevant for.** `stablecoin_issuer` (cross-chain supply, issuer volumes), `chain` (cross-chain activity comparison), `orchestrator` (cross-chain volume by route).
+
+**Forward reference.** B.1 fetcher to be written in `agents/fetchers/artemis_fetcher.md`.
+
+---
+
+## 8. Token Terminal
+
+**Domain.** `api.tokenterminal.com` (API). Documentation: `docs.tokenterminal.com`. Homepage: `tokenterminal.com`.
+
+**Auth.** API key required for programmatic access (paid **API plan**). A free account covers historical-data browsing in the web UI; building on the API requires the paid plan.
+
+**Rate limit.** **1000 requests/minute** (documented). Read-only REST, JSON responses.
+
+**What you get.**
+- Standardised financial metrics across protocols: revenue, fees, expenses, earnings, **P/S** and **P/E** ratios.
+- Financial statements per project, normalised so protocols are comparable.
+- Market-sector groupings and 25+ endpoints (metrics / projects / financials).
+
+**Trigger conditions (when to enable).**
+- Protocols or chains with on-chain revenue (DeFi protocols, L1/L2 with fee revenue).
+- Valuation-multiple analysis (P/S, P/E) is part of the thesis.
+
+**Do NOT use for.**
+- Wallet-level or raw-transaction data.
+- Price feed (use CoinGecko §4) — TT is metrics, not a ticker.
+
+**Documented quirks.**
+- API access is **paid** — the free account only unlocks UI historical browsing, not programmatic pulls. Budget accordingly.
+- Metrics are **TT-standardised**; their revenue/fee definitions can diverge from an issuer's own reporting — note the definition when citing.
+- 1000 req/min is the documented ceiling; this harness will not approach it for single-subject runs.
+
+**User-Agent.** `public_user_agent` (NOT `sec_user_agent`) — PII-free, identical across all runs.
+
+**Relevant for.** `chain` (fee/revenue, valuation multiples), `stablecoin_issuer` (protocol financials where the issuer runs an on-chain protocol), `agentic_payment_layer` (protocol economics if on-chain).
+
+**Forward reference.** B.1 fetcher to be written in `agents/fetchers/token_terminal_fetcher.md`.
+
+---
+
+## 9. Allium / Nansen
+
+This section registers **two distinct platforms** bundled together because they serve the same role — labelled wallet behaviour and whale/smart-money analytics. Pick per need: **Nansen** for human-readable address labels and Smart Money tracking; **Allium** for raw + enriched warehouse-scale on-chain data.
+
+**Domain.**
+- **Nansen** — `nansen.ai`; API documentation `docs.nansen.ai`.
+- **Allium** — `allium.so`; API documentation `docs.allium.so`.
+
+**Auth.** Both require an API key.
+- **Nansen** — **credit-based**: free credits to test core endpoints (no expiry pressure); Pro credits paid (e.g. $100 / 100K credits, $500 / 500K, $1000 / 1M; ~100K balance/pnl/txn checks **or** ~20K Smart Money calls per $100).
+- **Allium** — **enterprise, quote-based**: no self-serve free tier; pricing starts in the high four figures/month.
+
+**Rate limit.** Quota/credit-based rather than a strict req/sec ceiling. Nansen meters by credits (Smart Money calls are the most expensive). Allium is governed by an enterprise SLA (real-time API ~80ms response, 3–4s data freshness).
+
+**What you get.**
+- **Nansen** — Smart Money tracking, wallet profiling, token holder ("god mode") breakdowns, and proprietary labels on hundreds of millions of addresses across 18+ chains.
+- **Allium** — indexed blockchain data across 80–130+ chains, 1000+ standardised schemas; Explorer (SQL queries) and Developer (fixed + enriched REST endpoints), real-time + warehouse.
+
+**Trigger conditions (when to enable).**
+- `wallet` — whale tracking, smart-money flow, holder concentration (primary use).
+- `stablecoin_issuer` — holder distribution and treasury-flow labelling.
+- Large protocols needing labelled-address analysis Dune/Etherscan can't cheaply label.
+
+**Do NOT use for.**
+- Budget or free runs — both are paid (Allium enterprise-only); prefer Dune §2 / Etherscan §3 for low-cost on-chain queries.
+- Primary price or TVL (use CoinGecko §4 / DefiLlama §1).
+
+**Documented quirks.**
+- **Two platforms, one role** — they are not interchangeable: Nansen = labels/smart-money, Allium = raw warehouse breadth. Document which one a given figure came from.
+- Nansen's credit model **burns fast** on Smart Money calls (~20K per $100) — estimate before bulk pulls.
+- Allium has **no self-serve free tier** (sales quote required) — gate any Allium dispatch behind explicit budget approval.
+- Labels are **proprietary and opaque** — treat them as strong hints, not ground truth; corroborate material claims on-chain.
+
+**User-Agent.** `public_user_agent` (NOT `sec_user_agent`) — PII-free, identical across all runs.
+
+**Relevant for.** `wallet` (primary — labels, smart-money flow), `stablecoin_issuer` (holder/treasury flows), `chain` (labelled activity).
+
+**Forward reference.** B.1 fetchers to be written as two adapters under one registry section: `agents/fetchers/nansen_fetcher.md` and `agents/fetchers/allium_fetcher.md`.
+
+---
+
+## 10. Electric Capital
+
+**Domain.** `developerreport.com` (the Developer Report), `electriccapital.com` (the firm). Open data: `github.com/electric-capital/developer-reports` and the `crypto-ecosystems` repo (published as a public good).
+
+**Auth.** None. The report and underlying Open Dev Data are **public and downloadable** — there is **no real-time API**. GitHub raw access is subject to GitHub's own limits.
+
+**Rate limit.** N/A — this is a periodic report plus an open dataset, not a rate-limited service. Pace GitHub fetches politely.
+
+**What you get.**
+- Annual **Developer Report** (published yearly since 2018; six editions through 2024) analysing open-source crypto developer activity.
+- Full-time / part-time / total developer counts by ecosystem, with per-ecosystem trends.
+- GitHub commit-activity analysis — the 2024 edition covers 902M commits across 1.7M repositories.
+
+**Trigger conditions (when to enable).**
+- `chain` ecosystems — developer mindshare / ecosystem health as a thesis input.
+- Large protocols and ecosystem-comparison questions.
+
+**Do NOT use for.**
+- Real-time or intraday signals — the cadence is **annual**; data is stale between releases.
+- Financial metrics, price, or TVL.
+
+**Documented quirks.**
+- **Annual cadence** — data can be 6–12 months stale; under a 7d/30d freshness gate (Gate 3) there will be nothing new. Respect the window and cite the edition year.
+- Ecosystem attribution depends on the `crypto-ecosystems` taxonomy — a repo must be mapped to an ecosystem to be counted; unmapped repos are invisible.
+- Bot/fork dedup and copy-paste fingerprinting are methodology-dependent; treat counts as Electric-Capital-defined.
+- The **2024 report** is the latest reference edition.
+
+**User-Agent.** `public_user_agent` (NOT `sec_user_agent`) — PII-free, identical across all runs.
+
+**Relevant for.** `chain` (developer health), `agentic_payment_layer` (ecosystem maturity), `orchestrator` (ecosystem context, secondary).
+
+**Forward reference.** B.1 fetcher to be written in `agents/fetchers/electric_capital_fetcher.md`.
+
+---
+
+## 11. Messari
+
+**Domain.** `messari.io`; API documentation `docs.messari.io` (legacy `data.messari.io/docs`).
+
+**Auth.** API key. **Free** tier (account-based); **Pro** and **Enterprise** paid tiers. Enterprise generates per-product keys (market data / metrics / asset profiles) from the dashboard.
+
+**Rate limit.** Free tier: **20 requests/minute**. Pro / Enterprise: higher; Enterprise has unlimited Market Data endpoints. Bulk data access is Pro/Enterprise only.
+
+**What you get.**
+- 15+ API families: market data, on-chain metrics, news, signals, fundraising, research, token unlocks, stablecoins, protocols, AI — across 40K+ assets and 210+ exchanges.
+- **Asset profiles** (qualitative entity descriptions) and **institutional research reports** (Enterprise reports ≥ weekly; free protocol reports on a rolling basis).
+
+**Trigger conditions (when to enable).**
+- Any subject needing institutional / narrative research context, asset profiles, fundraising history, or token-unlock schedules.
+- `stablecoin_issuer` — Messari's stablecoin-specific endpoints.
+
+**Do NOT use for.**
+- High-frequency quantitative pulls on the free tier (20 req/min is tight).
+- Assuming free access to deep research — the best reports are Enterprise-gated; cite, don't presume.
+- Raw-transaction data.
+
+**Documented quirks.**
+- Strong for **narrative / qualitative** context and asset profiles; weaker as a quantitative primary — cross-check metrics against DefiLlama §1 or the on-chain source.
+- Free tier's **20 req/min** caps throughput — queue requests.
+- The most valuable research reports are **Enterprise-gated**; bulk data is Pro/Enterprise only.
+
+**User-Agent.** `public_user_agent` (NOT `sec_user_agent`) — PII-free, identical across all runs.
+
+**Relevant for.** All five `subject_class` values for research/profile context; especially `stablecoin_issuer` (stablecoin endpoints), `chain`, `agentic_payment_layer`.
+
+**Forward reference.** B.1 fetcher to be written in `agents/fetchers/messari_fetcher.md`.
+
+---
+
+## 12. L2Beat
+
+**Domain.** `l2beat.com`. **Undocumented internal API**: `l2beat.com/api/tvl.json` (aggregate) and `l2beat.com/api/[project].json` (per-project). Source + research: `github.com/l2beat/l2beat`.
+
+**Auth.** None (no key). The API is **public but undocumented and explicitly unsupported**.
+
+**Rate limit.** None documented. **Hard rule for this harness**: cap at 1 req/sec with 200ms jitter — these are unadvertised endpoints on free hosting; respectful pacing keeps them usable.
+
+**What you get.**
+- L2-specific metrics: **Total Value Secured (TVS)** = canonical-bridged + externally-bridged + natively-minted assets.
+- TVL, activity (transaction counts), and per-project breakdowns.
+- Risk assessments / stage classification and data-availability summaries.
+
+**Trigger conditions (when to enable).**
+- `chain` where the chain is an **L2** / rollup / scaling solution.
+- L2 ecosystem mapping or cross-L2 comparison.
+
+**Do NOT use for.**
+- L1 data (out of scope — use DefiLlama §1) or non-L2 subjects.
+- Price / market cap.
+- Anything requiring guaranteed uptime — the API is unsupported.
+
+**Documented quirks.**
+- The API is **undocumented and explicitly unsupported** — L2BEAT states "we make no guarantees that it will continue working." Endpoint URLs have changed historically; validate the endpoint shape per run and **fall back to DefiLlama §1 on 404**.
+- **"TVS" is L2BEAT's broader metric** — do not equate it 1:1 with DefiLlama TVL.
+- Risk and stage labels are L2BEAT's **editorial** assessments, not raw on-chain facts.
+
+**User-Agent.** `public_user_agent` (NOT `sec_user_agent`) — PII-free, identical across all runs.
+
+**Relevant for.** `chain` (L2s specifically — TVS, txs, fees, risk/stage), `orchestrator` (L2 settlement context, secondary).
+
+**Forward reference.** B.1 fetcher to be written in `agents/fetchers/l2beat_fetcher.md`.
+
+---
+
+## 13. CoinMarketCap (CMC)
+
+**Domain.** `pro-api.coinmarketcap.com` (API). Documentation: `coinmarketcap.com/api/documentation` and `pro.coinmarketcap.com`. Homepage: `coinmarketcap.com`.
+
+**Auth.** API key **required on every tier, including the free Basic plan**. Tiers: **Basic** (free), **Hobbyist** ($29/mo), **Startup** ($79/mo), **Standard** ($299/mo), **Professional** ($699/mo), **Enterprise** (custom).
+
+**Rate limit.** Per-tier req/min ceiling, reset every 60 seconds (429 on overage); usage is **metered by call credits** — roughly 1 credit / 100 data points returned, not 1 credit / request. Basic is the lowest tier on both axes.
+
+**What you get.**
+- Price, market cap, 24h volume, rankings, listings.
+- Coin and exchange metadata.
+- Same data category as **CoinGecko (§4)** — price / market cap.
+
+**Trigger conditions (when to enable).**
+- **Sibling / fallback to CoinGecko (§4)** — CoinGecko is the **primary** price / market-cap source; enable CMC as a cross-check, or when CoinGecko coverage or rate limits fail.
+- Resolving a price / market-cap discrepancy via a second source.
+
+**Do NOT use for.**
+- Primary price source — CoinGecko §4 is primary; running both by default double-spends the rate/credit budget.
+- On-chain / transaction data or TVL.
+
+**Documented quirks.**
+- **Credit-based metering** (1 credit / 100 data points) — wide listings calls burn credits fast; prefer targeted single-asset queries.
+- **Coin IDs differ from CoinGecko's slugs** — maintain a CMC-id ↔ CoinGecko-slug map; never assume the same identifier across the two. Symbols collide — resolve to the CMC id.
+- The Basic tier still **requires a key** (unlike DefiLlama's fully open API §1).
+
+**User-Agent.** `public_user_agent` (NOT `sec_user_agent`) — PII-free, identical across all runs.
+
+**Relevant for.** Same surface as CoinGecko §4 — `stablecoin_issuer` (peg/dominance cross-check), `chain` (native-token market data), `agentic_payment_layer`, `wallet` (native token) — used as **fallback / cross-check**, not primary.
+
+**Forward reference.** B.1 fetcher to be written in `agents/fetchers/coinmarketcap_fetcher.md`.
+
+---
+
 ## Cross-cutting rules
 
 - **Keys live on disk, never in code, never in logs.** Each provider's key path is fixed (`~/.config/anamnesis/<provider>.key`). The harness reads the key into memory at the start of the relevant agent's run and passes it via header or query string only.
@@ -253,8 +508,8 @@ This is the **only data source in the registry** that carries the operator's ema
 If a real run surfaces a need for a source not in this registry (e.g., Token Terminal for protocol revenue, Artemis for cross-chain analytics, Nansen for wallet labelling), do **not** add the call inline. Instead:
 
 1. Record `event: "out_of_registry"` in `meta/run.jsonl` and halt.
-2. Open a PR to this file with a new entry following the same six-field shape: Domain / Auth / Rate limit / What you get / Documented quirks / Relevant for.
+2. Open a PR to this file with a new entry following the same six-field shape: Domain / Auth / Rate limit / What you get / Documented quirks / Relevant for. (Conditional non-core sources additionally carry Trigger conditions / Do NOT use for / User-Agent / Forward reference fields — see §7–§13.)
 3. Update any agent that needs the new source to reference it by registry name.
 4. Re-run.
 
-The registry is small on purpose — six sources cover the surface that Stack Anamnesis actually needs for the five subject classes (five always-available + one conditional via `P0_sec_email`). Expansion is a deliberate, reviewed step, not an in-run patch.
+The core registry is small on purpose — six core sources (five always-available + one conditional via `P0_sec_email`) cover the baseline surface for the five subject classes, with seven conditional non-core sources (§7–§13) enabled per `subject_class`. Expansion beyond these thirteen is a deliberate, reviewed step, not an in-run patch.

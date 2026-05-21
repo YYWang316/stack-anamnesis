@@ -317,6 +317,34 @@ crypto_report_template.md (currently untracked at repo root, v1.2, 513 lines, YY
 
 ---
 
+## TD-020 — B.1 verification of Medium-confidence data source entries
+
+**Status:** active 2026-05-21 (opened during B.0 Step 4 review).
+
+Three of the seven conditional non-core sources (§7-§13) were flagged Medium confidence during agent web research:
+
+1. **§7 Artemis** — Domain inferred as api.artemisanalytics.com (incorrect; verified correct is artemis.ai during Step 4 review against artemis.ai/docs/welcome/overview). Product surface incomplete (only API mentioned; actually 5 products: Terminal, Sheets, API, Snowflake Share, Research). Specific data scope numbers inferred.
+
+2. **§9 Allium / Nansen** — Enterprise pricing cited from secondary source; chain count cited because sources disagreed.
+
+3. **§12 L2Beat** — Undocumented API endpoints from 2021-2023 forum thread; may be stale. Entry warns to validate per run.
+
+**Required:** when B.1 writes each fetcher (agents/fetchers/artemis_fetcher.md, allium_fetcher.md, nansen_fetcher.md, l2beat_fetcher.md), the first action is:
+1. Verify the registered domain resolves and returns valid data.
+2. If incorrect, update data_source_registry.md §N inline as part of the fetcher commit (atomic correction).
+3. Confirm rate limit and auth model against current official docs.
+
+**Known Artemis corrections to fold into B.1:**
+- Domain: artemis.ai (not artemisanalytics.com)
+- Products: Terminal, Sheets, API, Snowflake Share, Research
+- Customers include: McKinsey, T.Rowe, VanEck, Visa, Circle, Sequoia
+
+**Why deferred to B.1:** B.1 fetcher writes naturally trigger API verification; bundling registry correction with fetcher write is one atomic edit. Rewriting registry now without fetcher context risks introducing different inaccuracies.
+
+**History:** Surfaced when user verified §7 Artemis against artemis.ai/docs/welcome/overview during Step 4 pre-commit review.
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.
