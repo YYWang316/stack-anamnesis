@@ -346,6 +346,37 @@ Three of the seven conditional non-core sources (§7-§13) were flagged Medium c
 
 ---
 
+## TD-021 — Archived paid-only data sources (Token Terminal, Allium/Nansen)
+
+**Status:** active 2026-05-21 (opened during B.0→B.1 transition).
+
+Three of the seven conditional data sources in `references/data_source_registry.md` §7-§13 are archived for B.1 due to paid-only access:
+
+- **§8 Token Terminal** — paid API plan (free account = UI browsing only; programmatic access requires paid plan, price not public).
+- **§9 Allium** — enterprise sales only (~$5k+/month, no self-serve free tier).
+- **§9 Nansen** — credit-based pricing ($100+ minimum for meaningful usage).
+
+**Why deferred:** the user's current research workflow operates under free-tier constraints. The 4 remaining conditional sources (Artemis Lite, Electric Capital, Messari free, L2Beat undocumented, CoinMarketCap Basic) cover the conditional surface needed for B.1's first research runs.
+
+**Architectural impact for B.1:** fetchers will be written for the 6 core sources (§1-§6) plus 5 active conditional sources (§7 Artemis, §10 Electric Capital, §11 Messari, §12 L2Beat, §13 CoinMarketCap) — 11 active fetchers total. Token Terminal (§8), Allium and Nansen (§9) spec entries remain in data_source_registry.md untouched; their ARCHIVED status will be added to the registry entry inline at the time the corresponding fetcher would otherwise be written (atomic decision + registry update + TD-021 reference, one commit per affected source's deferral).
+
+**To unarchive any of the three:**
+1. Purchase the required access (API plan / credits / enterprise contract).
+2. Update the `Status:` line in data_source_registry.md from ARCHIVED to ACTIVE with the purchase date.
+3. Write the corresponding fetcher: `agents/fetchers/<source>_fetcher.md` + `tools/fetchers/<source>_fetch.py`.
+4. Update TD-021 (this entry) to log which source was unarchived.
+
+**Coverage gaps from archiving:**
+- **Standardized financial metrics across protocols** (P/S, P/E ratios) — Token Terminal's specialty. Workaround: compute from DefiLlama revenue + market cap manually.
+- **Wallet labels + Smart Money tracking** — Nansen's specialty. Workaround: Etherscan + RPC give raw addresses without labels.
+- **Warehouse-scale on-chain data** — Allium's specialty. Workaround: Dune covers ~80% via SQL queries.
+
+**Revisit when:** the user has budget for one of these, OR enters an enterprise context (e.g., a job at a fund that licenses these tools).
+
+**History:** Decision made 2026-05-21 during B.0→B.1 transition when user verified the paid-vs-free split of conditional sources. Aligns with cost-aware research workflow constraint that motivated selecting open-source / free-tier sources where possible.
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.
@@ -426,7 +457,8 @@ to B.5+ (template reconciliation deferred per TD-019).
 - **4 canonical gates**: subject_confirm / sec_email (conditional) / 
   freshness / language
 - **13 registered data sources**: 6 core (§1-§6) + 7 conditional 
-  (§7-§13)
+  (§7-§13) — 11 active for B.1 implementation (3 archived pending 
+  budget; see TD-021)
 - **5 subject classes**: stablecoin_issuer, orchestrator, wallet, 
   chain, agentic_payment_layer (single-subject only; sector → Phase C)
 - **2 writer modes**: monolingual (en/zh) + dual writer (both) + 
