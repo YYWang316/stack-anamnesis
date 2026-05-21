@@ -352,6 +352,8 @@ Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when 
 
 ### Lesson: "human readability" is not a default assumption
 
+**Status: LANDED in MEMORY.md (B.0 Step 6, commit pending).**
+
 When designing spec files in an LLM-agent workflow, ask "who directly reads this file, when?" before optimizing for human readability. Many agent-mediated workflows have users interact only via agent translation — direct file reads are rare. Optimizing for "human readability inline with data" in those cases may add complexity (e.g., needing a parser-based write tool for markdown-with-YAML) rather than reduce it.
 
 **Origin:** B.0 #2 originally designed `references/subject_relationships.md` as a markdown+YAML hybrid. User challenged the "human readability" assumption mid-flight (B.0 mid-flight session, 2026-05-13); correct architecture was data (`.yaml`) + design (`.md`) split. TD-013 reduced from 9-step parser to 3-line pyyaml wrapper.
@@ -359,6 +361,8 @@ When designing spec files in an LLM-agent workflow, ask "who directly reads this
 **Applies to:** future spec file design. Don't default to markdown+YAML hybrid without first justifying why a human directly reads the file. If the answer is "they don't, the agent translates", split data from design.
 
 ### Lesson: mid-flight course corrections are first-class moves
+
+**Status: LANDED in MEMORY.md (B.0 Step 6, commit pending).**
 
 When a foundational assumption is challenged mid-deliverable, pause the deliverable, steel-man the challenge, sanity-check the alternative architecture **before** editing files. The cost of a 10-step migration before deeper work depends on the wrong architecture is far smaller than the cost of unwinding the wrong architecture after it has propagated to 5+ files. Mid-flight corrections are not "thrash" — they are the cheapest point at which to catch a wrong design.
 
@@ -372,6 +376,8 @@ The pattern reinforced: when foundational assumption is challenged, steel-man th
 
 ### Lesson candidate: "different prompt = different run"
 
+**Status: LANDED in MEMORY.md (B.0 Step 6, commit pending).**
+
 When a P0 gate's processing implies that the user's intent warrants a different prompt (e.g., narrowing a sector prompt to a single-subject prompt), the right architectural move is **abort + ask the user to re-run**, NOT internal restart-from-gate with prompt substitution. Two prompts means two runs; the audit trail of each run is cleaner if it corresponds to exactly one prompt. Internal restart mechanisms that splice two prompts into one run trade audit clarity for marginal UX savings (one extra command typed by the user vs. mangled audit history).
 
 **Origin:** B.0 #6 (`agents/scope_gate.md`) initially designed path (a) sector narrow with internal restart-from-gate; user challenged the necessity 2026-05-13; correction made path (a) abort + user re-run; TD-015 (orchestrator restart capability) closed-as-unnecessary.
@@ -379,6 +385,8 @@ When a P0 gate's processing implies that the user's intent warrants a different 
 **Applies to:** future gate design when "user changed their mind / clarified intent" could be interpreted as "same run, patch state" vs. "different intent, new run". Default to "different intent = new run" unless there is explicit justification for in-run patching.
 
 ### Lesson candidate: over-engineering through inherited framework
+
+**Status: LANDED in MEMORY.md (B.0 Step 6, commit pending).**
 
 When forking a harness for a new domain, the inherited framework's shape (gate count, decision points, abstractions) must be challenged against the new domain's actual workflow — NOT silently adopted as default. Inherited frameworks carry assumptions about user behavior that may not transfer. The cost of detecting framework mismatch early (mid-design) is far smaller than detecting it late (mid-implementation).
 
