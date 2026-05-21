@@ -16,27 +16,54 @@ description: Forward-looking design notes deferred until the fork stabilizes. Ea
 
 **Revisit when:** the first X long-post phase is being designed.
 
-## TD-002 — Add `sector` and `stack_position` scopes when pipelines exist
+## TD-002 — Sector / comparison scope expansion (Phase C)
 
-**Decision (2026-05-12):** P0_scope enum starts with `single` only. The multi-subject scopes (sector for horizontal comparison, stack_position for vertical dependency trace) are deferred until their pipelines exist.
+**Status:** active (re-scoped 2026-05-20 during B.0 pre-Step-4 
+cleanup audit; original P0_scope framing removed).
 
-**Why:** P0 gate values must route to real phase pipelines. Adding enum options without backing pipelines violates the "rule must be enforceable in code" principle inherited from references/inherited_principles.md.
+The 4-gate design supports single-subject research only. Sector 
+research (e.g., "stablecoin issuer landscape") and comparison 
+research (e.g., "compare USDC vs USDT") are deferred to Phase C.
 
-**Revisit when:**
+**Required for Phase C:**
+1. Extend the harness to accept multi-subject prompts (sector scope) 
+   and explicit comparison prompts (comparison scope).
+2. Update subject_confirm_gate.md (or successor) to detect sector / 
+   comparison intent and route accordingly.
+3. Add output dispatch for sector reports (one report covering a 
+   group of subjects) and comparison reports (parallel analysis of 
+   2+ subjects).
+4. Determine whether sector/comparison reports reuse the deep-dive 
+   template or get distinct templates.
 
-- 20+ single-scope runs accumulated, OR
-- An incident logs "writer attempted comparison but no pipeline available", OR
-- Manual sector/stack-trace work becomes a recurring pain
+**Why deferred:** Phase B scope was deliberately narrowed to 
+single-subject research during the mid-flight restart from 7-gate 
+to 4-gate. Multi-subject is a Phase C expansion, not a B-series 
+patch.
 
-## TD-003 — Add 365d freshness window when mature subjects warrant it
+**Original framing (preserved for audit):** opened during 7-gate 
+era when P0_scope was an active gate enforcing single-subject 
+ritual. P0_scope was eliminated in the 4-gate redesign; sector 
+deferral logic moved to phase-level scope (Phase C handles it, 
+no gate enforces it in Phase B).
 
-**Decision (2026-05-12):** P0_freshness enum is `7d / 30d / 90d / since_TGE`. Skips 365d because current research subjects (crypto payments infra, agentic payments) are mostly < 2 years old, where 365d ≈ since_TGE provides no analytical difference.
+**Revisit when:** Phase C begins.
 
-**Revisit when:**
+## TD-003 — 365d freshness window
 
-- We start covering protocols > 2 years old (Aave, Uniswap, Maker) and finding lifetime data too noisy
-- A validator phase wants to compare "365d window vs lifetime" as a signal-quality check
-- An incident logs "writer averaged across full history when only recent year was relevant"
+**Status:** **closed-as-resolved-by-4-gate 2026-05-20** during 
+B.0 pre-Step-4 cleanup audit.
+
+**Resolution:** the 4-gate freshness enum (research_dimensions.md 
+§2.3 + agents/freshness_gate.md) already includes `1 year` (= 365d) 
+and `quarter` (= current fiscal quarter). The original request — 
+"add a 365d freshness window" — is delivered by the `1 year` 
+canonical value.
+
+**History:** opened during equity-era 7-gate framework design when 
+freshness enum was narrower; closed during B.0 mid-flight restart 
+audit when 4-gate freshness enum was found to already cover the 
+requested window.
 
 ## TD-004 — Add issuer attestation feeds to data_source_registry
 
@@ -239,9 +266,60 @@ agents/freshness_gate.md Step 1 reads {Subject}.tge_date from the yaml to comput
 
 ---
 
+## TD-018 — Gen 1/2 residue sweep across SKILL/README/phase_contract/maintenance/workflow_diagram/incident_trigger
+
+**Status:** active 2026-05-20 (opened during B.0 pre-Step-4 cleanup audit).
+
+The mid-flight restart from 7-gate to 4-gate design deleted the in-progress 7-gate agent files (commit 7c2d42a) but left Phase A equity-era and Phase B 7-gate references in several files that were not part of the restart's deletion scope:
+
+1. **SKILL.md** — still references Gen 1 gates: P0_lang, P0_sec_email, P0_palette, USER.md sticky mechanism.
+2. **references/phase_contract.md** — references Gen 2 gates: P0_output_format, P0_scope. (Scheduled for Step 5 rewrite; this TD overlaps but tracks the residue specifically.)
+3. **references/maintenance.md** — equity locked-template / submodule discipline (Gen 1 framing).
+4. **references/workflow_diagram.md** — Gen 1 interactive gates + USER.md references.
+5. **tools/io/incident_trigger.py:75** — emits P0_lang / P0_sec_email / P0_palette in an incident message (Gen 1 phase names).
+6. **README.md** — references `skills_repo/er/ep` submodule architecture and USER.md.template (both removed).
+
+**Why deferred:** these files are each scheduled for rewrite in a later step or sub-phase. SKILL/README/HARNESS rewrites are appropriate for end-of-B.0 or B.1 start; phase_contract.md is Step 5; maintenance/workflow_diagram are pending rewrite alongside Phase B documentation pass. Touching them piecemeal during pre-Step-4 cleanup would mix concerns.
+
+**Required:** during each file's scheduled rewrite, sweep Gen 1/2 residue identified above. Add a verification step to the rewrite checklist: grep the file for `P0_lang|P0_palette|P0_output_format|P0_scope|USER.md|skills_repo|equity` and confirm each hit is intentional (archive citation, history note) or fixed.
+
+**Revisit when:** each file's scheduled rewrite step lands. For coordination, list affected files in the rewrite step's commit message.
+
+**History:** Surfaced during B.0 pre-Step-4 cleanup audit (2026-05-20) when agent surveyed Phase A residue category. The 4-gate spec layer is internally clean; residue is in older layer files awaiting rewrite.
+
+---
+
+## TD-019 — crypto_report_template.md 4-gate design reconciliation
+
+**Status:** active 2026-05-20 (opened during B.0 pre-Step-4 cleanup audit).
+
+crypto_report_template.md (currently untracked at repo root, v1.2, 513 lines, YYFoundry/NYU branded) predates the 4-gate design and contains content that contradicts the current spec:
+
+1. **Lines 59-60 contradict the new language enum:** template states "both 模式会并行产出两份独立 HTML (不是双语对照)" — i.e., it explicitly excludes the side_by_side value that Gate 4 now defines. With side_by_side as a canonical enum value, this template language is wrong.
+
+2. **Line 35 contradicts §2.1 subject_confirm spec:** template includes "Subject Type: □ Chain □ L2 □ DeFi □ News □ Asset/Token" as a user-facing input — but research_dimensions.md §2.1 explicitly forbids asking subject_type ("the agent never asks subject_type"). guessed_type is internal-only in the 4-gate design.
+
+3. **Gen 1/Gen 2 concepts still present:** Mode A/B auto-detection (Gen 1), Scope/sector inputs (Gen 2 P0_scope), Output Type selection (Gen 2 P0_output_format). All eliminated in 4-gate redesign.
+
+**Why deferred:** Step 7 of the B.0 restart was scheduled to MOVE this file from repo root into references/. The audit reveals the move alone is insufficient — the content needs reconciliation against the 4-gate design first. Moving a contradictory document into references/ would propagate the contradictions into the canonical reference layer.
+
+**Required:** before (or as part of) Step 7's move:
+1. Update language enum section (lines 59-60) to reflect 4 values (en/zh/both/side_by_side), with both vs side_by_side semantics distinguished per §2.4.
+2. Remove the Subject Type checkbox (line 35) and any narrative that surfaces type-selection to the user.
+3. Remove Mode A/B / Scope/sector / Output Type sections; replace with 4-gate flow if user-visible checkpoints are still desired.
+4. Verify the YYFoundry brand content (workshop notes, "Bit != Coin" framing) survives the rewrite — those are unrelated to 4-gate semantics and should be preserved.
+
+**Why both this and Step 7:** Step 7's scope was "trivial move". This TD captures the substantive design alignment work that the move surfaces. They can be combined into a single commit when both are ready, or executed separately (TD-019 first, then trivial Step 7 move). User's choice.
+
+**Aligns with TD-006** which already notes that the locked-HTML template skeleton is pending design.
+
+**History:** Surfaced during B.0 pre-Step-4 cleanup audit (2026-05-20) when agent compared crypto_report_template.md head + language/side_by_side scan against the 4-gate spec.
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
-Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 7-gate set) is executed. This is a recurring slot — append new lessons as they emerge.
+Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.
 
 ### Lesson: "human readability" is not a default assumption
 
