@@ -12,68 +12,84 @@
       "parallelism": "sequential",
       "inline": true,
       "tool": "tools/io/lint_incidents.py",
-      "executor_note": "Orchestrator first runs tools/io/lint_incidents.py (exit 0 required — non-zero is a release blocker because the institutional log itself has drifted). Then reads INCIDENTS.md end-to-end before P0_intent. For each entry I-NNN it appends an event to meta/run.jsonl: `incident_precheck.acknowledged` for active entries (default), `incident_precheck.skipped` for entries with Status: superseded (carries superseded_by pointer instead of an ack). Novel-looking matches against the current target (e.g. private-fund target → I-002) require a stricter posture in downstream phases. Superseded entries do not raise the bar — their successor does.",
+      "executor_note": "Orchestrator first runs tools/io/lint_incidents.py (exit 0 required — non-zero is a release blocker because the institutional log itself has drifted). Then reads INCIDENTS.md end-to-end before P0_subject_confirm (the first gate). For each entry I-NNN it appends an event to meta/run.jsonl: `incident_precheck.acknowledged` for active entries (default), `incident_precheck.skipped` for entries with Status: superseded (carries superseded_by pointer instead of an ack). Novel-looking matches against the current target (e.g. private-fund target → I-002) require a stricter posture in downstream phases. Superseded entries do not raise the bar — their successor does.",
       "reads": ["INCIDENTS.md"]
     },
     {
-      "id": "P0_subject_class",
+      "id": "P0_subject_confirm",
       "produces": [
-        "meta/run.json:subject",
-        "meta/run.json:primary_class",
-        "meta/gates.json:subject_class.value",
-        "meta/gates.json:subject_class.source",
-        "meta/gates.json:subject_class.rationale"
-      ],
-      "blocking": true,
-      "interactive": false,
-      "parallelism": "sequential",
-      "inline": true,
-      "reads": ["references/subject_taxonomy.md"],
-      "values": ["stablecoin_issuer", "orchestrator", "wallet", "chain", "agentic_payment_layer"],
-      "fail_action": "if after one clarifying question the subject still does not fit any of the five classes, record event 'not_in_taxonomy' in meta/run.jsonl and halt; do not invent a sixth class; do not force-fit"
-    },
-    {
-      "id": "P0_output_format",
-      "produces": [
-        "meta/run.json:output_format",
-        "meta/gates.json:output_format.value",
-        "meta/gates.json:output_format.source"
+        "meta/gates.json:subject_confirm.subject_entity",
+        "meta/gates.json:subject_confirm.parent_or_issuer_entity",
+        "meta/gates.json:subject_confirm.user_confirmed_action"
       ],
       "blocking": true,
       "interactive": true,
       "parallelism": "sequential",
-      "inline": true,
-      "values": ["report", "thread"],
-      "sticky_source": "USER.md:default_output_format"
+      "agent": "agents/subject_confirm_gate.md",
+      "conditional": false,
+      "depends_on": ["P_INCIDENT_PRECHECK"],
+      "reads": ["references/subject_relationships.yaml", "references/research_dimensions.md"],
+      "values": ["Y", "N_reinput", "skip_public_company"],
+      "on_user_reinput_requested": "When subject_confirm_gate emits user_reinput_requested (user answered N), the orchestrator emits a halt_for_reinput state and aborts the run cleanly. The user re-runs with a new prompt — a different prompt is a different run (references/research_dimensions.md §4). No default subject_entity is ever applied.",
+      "fail_action": "if the user does not answer after two re-asks, record event 'gate_unanswered' in meta/run.jsonl and halt; never infer subject_entity from web search alone and never apply a default"
     },
     {
-      "id": "P0_scope",
+      "id": "P0_sec_email",
       "produces": [
-        "meta/run.json:scope",
-        "meta/gates.json:scope.value",
-        "meta/gates.json:scope.source"
+        "meta/gates.json:sec_email.applies",
+        "meta/gates.json:sec_email.value",
+        "meta/gates.json:sec_email.source"
       ],
       "blocking": true,
       "interactive": true,
       "parallelism": "sequential",
-      "inline": true,
-      "values": ["single"],
-      "sticky_source": "USER.md:default_scope"
+      "agent": "agents/sec_email_gate.md",
+      "conditional": true,
+      "conditional_trigger": "subject_confirm.user_confirmed_action == \"Y\" AND subject_confirm.parent_or_issuer_entity.listed == true",
+      "depends_on": ["P0_subject_confirm"],
+      "always_exits": true,
+      "always_exits_note": "Even when the trigger is false this gate emits phase_exit (writing sec_email.applies=false), so downstream phases that depend_on it never stall.",
+      "values": ["declined", "email_provided"],
+      "runtime_only_note": "On a provided email the gate constructs sec_user_agent = \"StackAnamnesis/1.0 (<email>)\" in process memory for *.sec.gov hosts ONLY. The email is NEVER persisted to meta/gates.json, meta/run.json, logs, USER.md, or any git-tracked file; meta/gates.json stores only the 'declined' | 'email_provided' token. tools/audit/user_agent_pii.py is the post-run leak detector (I-003). See references/data_source_registry.md §6.",
+      "fail_action": "if trigger is false, write sec_email.applies=false with source 'applies_when_false', emit sec_email_skipped + phase_exit, and skip silently; if triggered and no valid answer after one re-ask, record 'gate_unanswered' and halt — never fall back to a default email or to 'declined'"
     },
     {
       "id": "P0_freshness",
       "produces": [
-        "meta/run.json:freshness",
         "meta/gates.json:freshness.value",
-        "meta/gates.json:freshness.source",
-        "meta/gates.json:freshness.suggested_by_class"
+        "meta/gates.json:freshness.source"
       ],
       "blocking": true,
       "interactive": true,
       "parallelism": "sequential",
-      "inline": true,
-      "values": ["7d", "30d", "90d", "since_TGE"],
-      "sticky_source": "USER.md:default_freshness"
+      "agent": "agents/freshness_gate.md",
+      "conditional": false,
+      "depends_on": ["P0_sec_email"],
+      "reads": ["references/subject_relationships.yaml"],
+      "values": ["7d", "30d", "90d", "quarter", "1 year", "since_TGE"],
+      "fail_action": "no default and no inference from prompt_raw; if no valid enum answer after one re-ask, record 'gate_unanswered' and halt"
+    },
+    {
+      "id": "P0_language",
+      "produces": [
+        "meta/gates.json:language.value",
+        "meta/gates.json:language.source",
+        "meta/gates.json:language.writer_mode_confirmed"
+      ],
+      "blocking": true,
+      "interactive": true,
+      "parallelism": "sequential",
+      "agent": "agents/language_gate.md",
+      "conditional": false,
+      "depends_on": ["P0_freshness"],
+      "values": ["en", "zh", "both", "side_by_side"],
+      "writer_dispatch": {
+        "en": "single monolingual EN writer -> research/{Subject}_Research_EN.html",
+        "zh": "single monolingual CN writer -> research/{Subject}_Research_CN.html",
+        "both": "two parallel writers -> two independent files (EN + CN); content may diverge by audience; emits language_dual_writers_dispatched",
+        "side_by_side": "one bilingual writer -> research/{Subject}_Research_Bilingual.html; EN/CN semantically identical; emits language_bilingual_writer_dispatched"
+      },
+      "fail_action": "no default and no inference from chat language or prompt_raw; both/side_by_side require an explicit Step 3 confirm; if no valid answer after one re-ask, record 'gate_unanswered' and halt"
     },
     {
       "id": "P0M_meta",
@@ -446,8 +462,8 @@
       "purpose": "Equity Photo Skill — card pipeline P7..P11"
     }
   },
-  "memory_files": ["MEMORY.md", "INCIDENTS.md", "USER.md"],
-  "memory_files_note": "MEMORY.md and INCIDENTS.md are load-bearing and must both be frozen verbatim into meta/system_prompt.frozen.txt at session start. USER.md is included only if present (gitignored). Order in this list is the read order at bootstrap.",
+  "memory_files": ["MEMORY.md", "INCIDENTS.md"],
+  "memory_files_note": "MEMORY.md and INCIDENTS.md are load-bearing and must both be frozen verbatim into meta/system_prompt.frozen.txt at session start. Order in this list is the read order at bootstrap.",
   "freeze_system_prompt_at": "session_start",
   "system_prompt_audit_path": "meta/system_prompt.frozen.txt"
 }

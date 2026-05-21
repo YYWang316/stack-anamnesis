@@ -16,10 +16,10 @@ The prose below uses dotted shorthand (P1.5, P3.6, P5.7) that maps to canonical 
 | Section narrative | Canonical id |
 |---|---|
 | Incident pre-check | `P_INCIDENT_PRECHECK` |
-| P0 — subject class (resolution) | `P0_subject_class` |
-| P0 — output format (interactive) | `P0_output_format` |
-| P0 — scope (interactive) | `P0_scope` |
-| P0 — freshness (interactive) | `P0_freshness` |
+| P0 — subject confirm (always, first gate) | `P0_subject_confirm` |
+| P0 — SEC email (conditional) | `P0_sec_email` |
+| P0 — freshness (always) | `P0_freshness` |
+| P0 — language (always, last gate) | `P0_language` |
 | P0 — meta validation | `P0M_meta` |
 | P0 — DB precheck | `P0_DB_PRECHECK` |
 | P1 — parallel research | `P1_parallel_research` |
@@ -53,7 +53,7 @@ The prose below uses dotted shorthand (P1.5, P3.6, P5.7) that maps to canonical 
 
 ```
 P_INCIDENT_PRECHECK ★
-  → P0_subject_class → P0_output_format → P0_scope → P0_freshness → P0M_meta → P0_DB_PRECHECK
+  → P0_subject_confirm → P0_sec_email (conditional) → P0_freshness → P0_language → P0M_meta → P0_DB_PRECHECK
   → P1 parallel research (financial / macro / news, 3 subagents)
   → P1.5 edge insight
   → P2 financial analysis
@@ -98,18 +98,24 @@ This phase is short, cheap, and non-skippable. A run that did not pre-check is n
 
 ## P0 block — gates and bootstrap
 
+The four P0 gates fire in **strict order** before any data fetch. Three are always-on; `P0_sec_email` is the only conditional gate. There is no sticky mechanism and no `USER.md` — every gate asks the user explicitly on every run. Canonical spec: `references/research_dimensions.md` §1–§2. Enforcement contract: `references/p0_gates.md` §1–§2.
+
 | Phase | Purpose |
 |---|---|
-| `P0_subject_class` | Resolve `{subject, primary_class}` against the five-class enum in `references/subject_taxonomy.md`. Resolution gate. See `references/p0_gates.md`. |
-| `P0_output_format` | `output_format ∈ {report, thread}`. Interactive. |
-| `P0_scope` | `scope ∈ {single}` (Phase A enum). Interactive; gate still runs even at 1-value enum to surface wrong-granularity prompts. |
-| `P0_freshness` | `freshness ∈ {7d, 30d, 90d, since_TGE}`. Interactive; class-default is a suggestion, not an inference. |
+| `P0_subject_confirm` | Always (first gate). Resolve `subject_entity` (the analytical "I") and any `parent_or_issuer_entity` by querying `references/subject_relationships.yaml` and the web in parallel, then present a three-way `Y` / `N` / `skip_public_company` confirm. `user_confirmed_action` is the authority that decides whether `P0_sec_email` fires. Agent: `agents/subject_confirm_gate.md`. |
+| `P0_sec_email` | **Conditional** — fires ONLY when `subject_confirm.user_confirmed_action == "Y"` AND `parent_or_issuer_entity.listed == true`. Collects a contact email (or canonical `declined`) for SEC EDGAR's User-Agent. Constructs `sec_user_agent` in runtime memory for `*.sec.gov` hosts only; the email is NEVER persisted (I-003). When the trigger is false the gate still runs, writes `applies=false`, and emits `phase_exit` — so the downstream chain never stalls. Agent: `agents/sec_email_gate.md`. |
+| `P0_freshness` | Always. `freshness ∈ {7d, 30d, 90d, quarter, 1 year, since_TGE}` — closed enum, single select, no default, no inference from the prompt. Agent: `agents/freshness_gate.md`. |
+| `P0_language` | Always (last gate). `language ∈ {en, zh, both, side_by_side}` — closed enum, no default, never inferred from chat language. Selects the P5 writer dispatch mode (see P4–P5.7 below). Agent: `agents/language_gate.md`. |
 | `P0M_meta` | Validate `workflow_meta.json` schema (`tools/research/validate_workflow_meta.py`). |
 | `P0_DB_PRECHECK` | Lookups for prior financials, peer companies, fresh macro snapshot. Never blocks. See `references/cross_quarter.md`. (Equity-era table shape; Phase B will redefine the precheck queries for the crypto taxonomy.) |
 
-**Hard floor for P0_output_format / P0_scope / P0_freshness:** the only allowed `meta/gates.json -> source` values are `user_response` and `USER.md sticky`. Auto mode does not waive these. `P0_subject_class` is a resolution gate and additionally accepts `prompt_unambiguous`.
+**Hard floor for all four gates:** the only allowed `meta/gates.json -> source` values are `user_response` (plus the gate-specific variants `user_response_after_conflict` / `user_direct` for `subject_confirm`, and `applies_when_false` for a skipped `sec_email`). There is **no** `USER.md sticky` source — the sticky mechanism is abolished. Auto mode does not waive any gate. A non-answer halts the run (`gate_unanswered`); no gate falls back to a default. See `references/p0_gates.md` §3 for the closed source-enum and the four forbidden rules.
 
-## P1–P3.7 — research pipeline (ER)
+## P1–P3.7 — research pipeline
+
+**Crypto fetcher dispatch (forward reference to B.1).** After the four gates resolve, P1 dispatches data fetchers across the **13 registered sources** in `references/data_source_registry.md`: **6 core** always-on sources (§1–§6 — DefiLlama, Dune, Etherscan family, CoinGecko, RPC tier, SEC EDGAR) plus **7 conditional** non-core sources (§7–§13 — Artemis, Token Terminal, Allium/Nansen, Electric Capital, Messari, L2Beat, CoinMarketCap). SEC EDGAR (§6) is gated on `P0_sec_email` — skipped when the email was `declined` or the gate did not apply; the conditional non-core sources are enabled per subject hints. Every fetch applies the freshness window from `P0_freshness`. `references/research_dimensions.md` §3 documents the dispatch logic; the concrete fetcher agents are B.1 work and not yet built.
+
+> **Residue note (TD-018 item 2):** the paragraph below describes the Phase A equity ER subagent pipeline (`financial_data_collector` / `macro_scanner` / `news_researcher` under `skills_repo/er/agents/`). It is retained for pipeline-shape continuity and will be replaced by the crypto fetcher dispatch above when B.1 lands.
 
 Delegated to subagents under `skills_repo/er/agents/`. The orchestrator's job is to dispatch with the right inputs (e.g., pass `prior_financials_used.json` to `financial_data_collector` so it knows which periods are already covered).
 
@@ -121,7 +127,12 @@ Delegated to subagents under `skills_repo/er/agents/`. The orchestrator's job is
 ## P4–P5.7 — report writing + adversarial review (ER)
 
 - **P4**: inject Sankey payload into `financial_analysis.json`.
-- **P5**: extract the locked HTML skeleton via `tools/research/extract_template.py --lang <cn|en> --run-dir <run_dir> --sha256`. Delegate to `report_writer_{cn,en}.md`. **Never edit structure** — substitute `{{PLACEHOLDER}}` only. **Never** hand-write a simplified report regardless of target type — see `INCIDENTS.md` I-002.
+- **P5 writer dispatch** — driven by `P0_language` (`meta/gates.json -> language.value`); see the `P0_language.writer_dispatch` map in `workflow_meta.json` and `agents/language_gate.md` (§Outputs, Procedure Step 4):
+  - `en` → single monolingual EN writer → one HTML at `research/{Subject}_Research_EN.html`.
+  - `zh` → single monolingual CN writer → one HTML at `research/{Subject}_Research_CN.html`.
+  - `both` → **two parallel writers** → two independent HTML files (EN + CN); same upstream research data, but content may diverge by audience (e.g. zh foregrounds 出海/cross-border, en foregrounds GENIUS-Act/regulatory framing). Emits `language_dual_writers_dispatched`. NOT a single merged document.
+  - `side_by_side` → **one bilingual writer** → one HTML at `research/{Subject}_Research_Bilingual.html`; each section written twice (EN + CN) and arranged in parallel, semantically identical (translation, not divergence). Emits `language_bilingual_writer_dispatched`.
+- **P5 mechanics**: extract the locked HTML skeleton via `tools/research/extract_template.py --lang <cn|en> --run-dir <run_dir> --sha256`. Delegate to the writer(s) selected above (`report_writer_{cn,en}.md` is the Phase A equity-era writer mechanism; the crypto writers under `agents/writers/` are forthcoming in B.5 per `agents/language_gate.md`). **Never edit structure** — substitute `{{PLACEHOLDER}}` only. **Never** hand-write a simplified report regardless of target type — see `INCIDENTS.md` I-002.
 - **P5_gate**: run `tools/research/validate_report_html.py --run-dir <run_dir> --lang <cn|en>`. It blocks simplified hand-written HTML by checking locked-template markers, six required sections, chart JS variables, minimum size/line count, and unresolved placeholders. Failure → discard the HTML and rerun P5 from the extracted skeleton.
 - **P5.5**: `final_report_data_validator.md`. CRITICAL → loop back to P5 (cap 2). 0 CRITICAL → proceed.
 - **P5.7 RED TEAM** ★: in parallel, delegate to `agents/attackers/red_team_numeric.md` and `agents/attackers/red_team_narrative.md`. Inputs at `meta/red_team/P5_7_RED_TEAM.input.json` cover the locked-template HTML, all upstream `research/*.json`, `cross_validation.json`, and the P5.5 validator output. Outputs at `validation/red_team_numeric_P5_7_RED_TEAM.json` and `validation/red_team_narrative_P5_7_RED_TEAM.json`. **Loop rule**: `summary.critical > 0` from either attacker → loop back to `P5_html` once with both attackers' challenge lists combined into a single revision request. Red-team retry cap = 1 (separate from the P5.5 retry cap of 2). A second critical from the red team after the loop → halt and surface to user. `warn` findings flow into `validation/QA_REPORT.md` at P12 but do not block. Distinct from QC peer agents: peers vote on agreement, attackers try to falsify.

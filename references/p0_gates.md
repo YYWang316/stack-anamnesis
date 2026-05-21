@@ -1,101 +1,113 @@
 ---
 schema_version: 1
-description: Per-gate rules for the four P0 gates of the crypto-payments harness (subject_class, output_format, scope, freshness). Read this when entering any P0 gate or when reviewing meta/gates.json. Companion: references/subject_taxonomy.md (the five-class enum behind P0_subject_class).
+description: Enforcement contract for the four P0 gates of the 4-gate harness
+  (subject_confirm, sec_email, freshness, language). Read this when entering any
+  P0 gate, when wiring the orchestrator's gate loop, or when reviewing
+  meta/gates.json. Companions: references/research_dimensions.md §2 (per-gate
+  spec), the four agent files under agents/ (implementations), workflow_meta.json
+  (machine-readable phase config).
 ---
 
-# P0 gates — per-gate rules
+# P0 gates — enforcement contract
 
-Stack Anamnesis has **four P0 gates** — all blocking, none skippable — that resolve the four orthogonal axes of one research run before any data fetch happens. The four gates split into two kinds:
+Stack Anamnesis resolves every research run through **four P0 gates**: three always-on and one conditional. They fire strictly in order before any data fetch happens. There is no sticky mechanism and no `USER.md`; every gate asks the user explicitly on every run, and nothing is remembered across runs.
 
-- **Resolution gate** — `P0_subject_class`. Resolves the subject (name + canonical identity) and the primary subject class from the user's prompt. Auto-resolution is allowed (and expected) when the prompt is unambiguous; the user is asked only on ambiguity.
-- **Interactive gates** — `P0_output_format`, `P0_scope`, `P0_freshness`. Cannot be inferred from the prompt with any confidence. Each must be satisfied by either a real user reply or a sticky value in `USER.md`. Auto-mode does not waive them. The cost of guessing wrong (wrong deliverable shape, wrong analytical scope, wrong time window across the whole run) is a full re-run.
+This file is the **enforcement contract** — the rules the orchestrator must hold while running the gates. For the per-gate behavioral spec (inputs, verbatim prompts, output shapes) read `references/research_dimensions.md` §2. For the machine-readable phase order and dependency graph read `workflow_meta.json`. **If anything here disagrees with `workflow_meta.json`, the JSON wins** — the JSON is the phase source of truth and this file is its enforcement companion.
 
-The four equity-era P0 gates (`P0_intent`, `P0_lang`, `P0_sec_email`, `P0_palette`) are **retired** for this harness:
-- `P0_intent` is subsumed by `P0_subject_class` (which resolves identity *and* classifies in one step).
-- `P0_lang` moves to `USER.md` as a sticky-only preference; there is no interactive language gate. (Rationale: research-output language is a settled per-user setting; the equity harness's interactive gate was a workaround for not having a sticky path, and that workaround is no longer needed.)
-- `P0_sec_email` is not applicable — the SEC EDGAR User-Agent header is an SEC-specific requirement that does not transfer to DefiLlama / Dune / Etherscan / CoinGecko / RPC providers. The PII-free `public_user_agent` invariant is preserved as a global harness rule (see `references/data_source_registry.md`).
-- `P0_palette` is dormant — it returns when the card pipeline (P7..P11 in the inherited workflow) is rebuilt for crypto. Until then there is no card output to palette, so the gate has no surface.
-
-Each gate's answer is recorded in `meta/gates.json` with a `source` field. Only the values listed below are allowed per gate; anything else is a P0 violation and will be caught in `meta/gates.json` review.
+The previous gate sets are **retired**: the Phase A equity-era 7-gate framework, and the intermediate Gen-2 4-gate set (`subject_class` / `output_format` / `scope` / `freshness`). Any reference to `P0_subject_class`, `P0_output_format`, `P0_scope`, `P0_intent`, `P0_lang`, or `P0_palette` is residue (tracked in `references/TODO.md` TD-018), not a live gate.
 
 ---
 
-## P0_subject_class (resolution gate)
+## Section 1: The 4 gates at a glance
 
-- **Goal**: resolve the user's prompt to `{subject, primary_class, suggested_slug}` where `primary_class ∈ {stablecoin_issuer, orchestrator, wallet, chain, agentic_payment_layer}`.
-- **Agent**: `agents/subject_class_resolver.md` (to be authored in Phase B; until then the orchestrator resolves inline, citing `references/subject_taxonomy.md`).
-- **Taxonomy contract**: see `references/subject_taxonomy.md` end-to-end. The five enum values are the **complete** allowed set. There is no sixth on-the-fly class.
-- **Interactive?** Only when confidence is low — ask **once**, then use the user's answer. Otherwise resolve from the prompt and proceed. (Same shape as the retired `P0_intent`.)
-- **Allowed `source` values**: `prompt_unambiguous` (resolved from the prompt), `user_response` (asked because of ambiguity).
-- **Sticky source**: none. Every run resolves freshly, because the subject changes every run.
-- **Out-of-taxonomy**: if after one clarifying question the subject still does not fit any of the five classes, record `event: "not_in_taxonomy"` in `meta/run.jsonl` and **halt**. Do not invent a sixth class; do not force-fit into the closest class.
-- **Recorded artifacts**: `meta/gates.json -> subject_class.{value, source, rationale}` (the `rationale` is one sentence on why this primary class — required for auditing forced cross-class calls).
+Mirrors `references/research_dimensions.md` §1.
 
-## P0_output_format (interactive gate)
+| Order | Phase id | Gate | Trigger | Asks user | Persists to |
+|---|---|---|---|---|---|
+| 1 | `P0_subject_confirm` | subject_confirm | always (first gate) | confirm subject identity: `Y` / `N` / `skip_public_company` | `meta/gates.json → subject_confirm` |
+| 2 | `P0_sec_email` | sec_email | **conditional** (see §2) | contact email, or `declined` | `meta/gates.json → sec_email` (token only — never the email) |
+| 3 | `P0_freshness` | freshness | always | window: `7d` / `30d` / `90d` / `quarter` / `1 year` / `since_TGE` | `meta/gates.json → freshness` |
+| 4 | `P0_language` | language | always (last gate) | output language: `en` / `zh` / `both` / `side_by_side` | `meta/gates.json → language` |
 
-- **Goal**: `output_format ∈ {report, thread}`.
-  - `report` — single bilingual-ready HTML deep-dive, produced via the locked-skeleton fill pattern (inherited from equity P5; the skeleton is crypto-tailored in Phase B).
-  - `thread` — X (Twitter) long-post / thread, structured per the rubric in `references/TODO.md` TD-001 (quality rubric + red-team narrative attacker + key-element post-check; no SHA-locked template).
-- **Agent**: `agents/output_format_gate.md` (to be authored in Phase B; until then the orchestrator asks inline).
-- **Sticky source**: `USER.md:default_output_format`.
-- **Inference policy**: no inference from the prompt. The same prompt can legitimately resolve to either format depending on what the user actually wants this run, and a wrong format is a full re-run.
-- **Allowed `source` values**: `user_response`, `USER.md sticky`.
-- **Halt** until you have one of the above.
-- **Recorded artifacts**: `meta/gates.json -> output_format.{value, source}`.
+- **subject_confirm** resolves `subject_entity` (the analytical "I") and any `parent_or_issuer_entity` (context + the SEC trigger). Its `user_confirmed_action` is the authority that decides whether `sec_email` fires.
+- **sec_email** is the *only* conditional gate. When its trigger is false it still runs — it writes `applies=false` and emits `phase_exit` — so the downstream chain never stalls.
+- **freshness** and **language** are always-on closed-enum single-selects with no defaults.
 
-## P0_scope (interactive gate)
+Agent implementations: `agents/subject_confirm_gate.md`, `agents/sec_email_gate.md`, `agents/freshness_gate.md`, `agents/language_gate.md`.
 
-- **Goal**: `scope ∈ {single}` (Phase A enum; `comparison` and `stack_position` are deferred to Phase B/C).
-- **Agent**: `agents/scope_gate.md` (to be authored in Phase B; until then the orchestrator confirms inline).
-- **Sticky source**: `USER.md:default_scope`.
-- **Phase A constraint**: `single` is the only allowed value. The gate still runs and still requires an explicit user answer (or sticky) — this is deliberate; it teaches the harness to ask for scope as a routine, even when the enum has only one value. When the enum widens, the calling shape will not need to change.
-- **Allowed `source` values**: `user_response`, `USER.md sticky`.
-- **Halt** until you have one of the above.
-- **Recorded artifacts**: `meta/gates.json -> scope.{value, source}`.
+---
 
-## P0_freshness (interactive gate)
+## Section 2: Sequence enforcement
 
-- **Goal**: `freshness ∈ {7d, 30d, 90d, since_TGE}`.
-  - `7d` — last 7 days only. For rapidly-moving subjects (chains, recent incidents).
-  - `30d` — last 30 days. Default for most stablecoin/orchestrator/wallet runs.
-  - `90d` — last 90 days. Quarter-equivalent; for trend-oriented runs.
-  - `since_TGE` — since token-generation event (or company inception, for token-less subjects). Lifetime view.
-- **Agent**: `agents/freshness_gate.md` (to be authored in Phase B; until then the orchestrator confirms inline).
-- **Sticky source**: `USER.md:default_freshness`.
-- **Inference policy**: the **subject_class default** (per `references/subject_taxonomy.md`) is a *suggestion*, not an inference. The orchestrator may surface the suggestion in the ask ("for a stablecoin issuer, 30d is the default — confirm or override?"), but the gate still requires an explicit answer or sticky.
-- **Allowed `source` values**: `user_response`, `USER.md sticky`.
-- **Halt** until you have one of the above.
-- **Recorded artifacts**: `meta/gates.json -> freshness.{value, source, suggested_by_class}` — the third field records which class-default was offered, for auditing how often users accept vs override.
+**Gates fire in strict order: 1 → 2 → 3 → 4.** `workflow_meta.json` encodes this as a linear `depends_on` chain (`P0_subject_confirm` ← `P0_sec_email` ← `P0_freshness` ← `P0_language`, rooted at `P_INCIDENT_PRECHECK`). The orchestrator must not reorder, parallelize, or batch the gates into a single combined prompt — each gate's user-facing ask is owned by its agent and surfaced on its own turn.
 
-## What never counts as a valid source (interactive gates only)
+**`sec_email` is the only conditional gate.** Its trigger is read from Gate 1's output:
 
-`auto_mode_default`, `assumed_from_chat_language`, `inferred_from_locale`, `inferred_from_subject_class`, `prefilled_for_speed`, or any other invented value. The three interactive gates exist because the answer is not derivable from context — inventing one defeats the gate.
-
-The resolution gate (`P0_subject_class`) is different: `prompt_unambiguous` *is* a valid source there, because identity often is derivable from the prompt. The line between the two is sharp on purpose.
-
-## Why a 1-value enum still has a gate (P0_scope)
-
-`P0_scope`'s Phase-A enum is exactly `{single}`. One might argue the gate is degenerate and should be deferred. It is not deferred, for two reasons:
-
-1. **Ritual matters.** Every interactive gate teaches the harness — and the user — to expect a confirm step. Skipping the gate in Phase A and reintroducing it in Phase B creates two different harness shapes for the same operator to learn.
-2. **It surfaces the "wrong granularity" failure mode early.** If a user prompts "research stablecoins" (a sector ask), the orchestrator at P0_scope cannot answer `single` honestly, and the failure is exposed at the right moment instead of buried in mid-run confusion.
-
-When `comparison` and `stack_position` are added to the enum in Phase B/C, the gate's calling shape does not change — only the enum widens.
-
-## Order and dependency
-
-The gates fire in **strict order**: `P0_subject_class` first (resolution), then the three interactive gates in any sequence that is convenient to surface to the user. The orchestrator may **batch the three interactive gates into one user prompt** to reduce back-and-forth, but it may not skip any one of them, and it must record all three sources in `meta/gates.json` even when answered in a single turn.
-
-After all four P0 gates are satisfied, the orchestrator records:
-
-```json
-{
-  "schema_version": 1,
-  "subject_class":   {"value": "stablecoin_issuer", "source": "prompt_unambiguous", "rationale": "Circle's primary product is USDC issuance."},
-  "output_format":   {"value": "report", "source": "user_response"},
-  "scope":           {"value": "single", "source": "USER.md sticky"},
-  "freshness":       {"value": "30d", "source": "user_response", "suggested_by_class": "30d"}
-}
+```
+trigger = (subject_confirm.user_confirmed_action == "Y")
+       AND (subject_confirm.parent_or_issuer_entity.listed == true)
 ```
 
-Any missing or invalid `source` is a release-blocker caught at `P_INCIDENT_POSTCHECK` (post-fork incident I-001-equivalent: gate-bypass via invented source).
+- If the trigger is **true**, the gate asks the user for an email (or `declined`).
+- If the trigger is **false**, the gate writes `sec_email.applies=false` with `source="applies_when_false"`, emits `sec_email_skipped` then `phase_exit`, and does **not** ask the user anything. This is the `always_exits` contract in `workflow_meta.json`: a conditional gate still produces a `phase_exit`, so Gate 3's `depends_on` resolves whether or not the email was collected.
+
+**Downstream phases halt until gates resolve.** No phase past the gate block (`P0M_meta`, `P0_DB_PRECHECK`, `P1_*`, and everything after) may begin until all four gates have emitted `phase_exit` and `meta/gates.json` carries the four resolved blocks (`subject_confirm`, `sec_email`, `freshness`, `language`). A gate is "resolved" when it has a `phase_exit` event and its `meta/gates.json` block exists — for `P0_language`, additionally `writer_mode_confirmed=true`.
+
+**A `user_reinput_requested` from Gate 1 aborts the run.** When `subject_confirm` emits `user_reinput_requested` (the user answered `N`), the orchestrator emits a `halt_for_reinput` state and stops cleanly. The user re-runs with a new prompt — a different prompt is a different run (`references/research_dimensions.md` §4). No partial gate state carries over; no default subject is applied.
+
+**Resume.** On resume, trust a gate's `meta/gates.json` block only when its `phase_exit` event is present (and `writer_mode_confirmed=true` for language). `sec_email` with `value="email_provided"` is the exception: the email lives only in runtime memory, so after a process restart the gate must re-ask even though the persisted token confirms an email was once provided. There is no recovery path for the email itself.
+
+---
+
+## Section 3: User answer authority
+
+**The `source` enum is closed.** Each resolved gate records a `source` in `meta/gates.json`. The only valid values are:
+
+| Gate | Allowed `source` values |
+|---|---|
+| `subject_confirm` | `user_response`, `user_response_after_conflict` (Case B), `user_direct` (Case D path c) |
+| `sec_email` | `user_response` (asked), `applies_when_false` (trigger false → skipped) |
+| `freshness` | `user_response` |
+| `language` | `user_response` |
+
+**The agent never invents a `user_response` value.** Every enum answer (`Y`/`N`/`skip_public_company`; an email or `declined`; a freshness window; a language) must come from a real user reply parsed against the gate's accepted-forms table. The agent may normalize input (e.g. `一周` → `7d`, `decline` → `declined`) but may not synthesize an answer the user did not give.
+
+**Forbidden `source` values** — any of these in `meta/gates.json` is a P0 violation: `auto_mode_default`, `assumed_from_chat_language`, `inferred_from_locale`, `inferred_from_prompt`, `prefilled_for_speed`, `USER.md sticky` (no sticky mechanism exists), or any other invented value. The gates exist precisely because the answer is not derivable from context — inventing one defeats the gate.
+
+**Non-answers halt; they never default.** If a user does not answer after the gate's re-ask budget (subject_confirm: two re-asks; sec_email / freshness / language: one re-ask), the gate emits `gate_unanswered` and the run halts. The orchestrator never substitutes a default value for a non-answer.
+
+Any missing or invalid `source`, or a gate block produced without a corresponding user reply, is a release-blocker caught at `P_INCIDENT_POSTCHECK` (gate-bypass via invented source — the I-001 pattern).
+
+---
+
+## Forbidden rules
+
+These are absolute. Each is also enforced at the agent level (see the per-agent "Forbidden" sections) and audited at `P_INCIDENT_POSTCHECK`.
+
+1. **NEVER fire a downstream phase before all required gates have `phase_exit`.** The gate block (`P0_subject_confirm` → `P0_sec_email` → `P0_freshness` → `P0_language`) is a hard floor. No fetcher, no DB precheck, no meta validation begins until all four gates have resolved and emitted `phase_exit`.
+
+2. **NEVER skip `sec_email`'s trigger check.** Gate 1's `user_confirmed_action` is the authority. The email is asked **only** when `user_confirmed_action == "Y"` AND `parent_or_issuer_entity.listed == true`. Even if a user volunteered an email earlier, the trigger condition — not the user's eagerness — decides whether the gate asks. A `skip_public_company` or `N` action means the trigger is false and the gate is skipped (writes `applies=false`).
+
+3. **NEVER cache or sticky gate answers across runs.** There is no `USER.md` and no sticky source. Every gate asks every run. The `sec_email` email additionally never persists even within a run — it lives only in process memory and is wiped on run termination (the I-003 contract; `tools/audit/user_agent_pii.py` is the leak detector).
+
+4. **NEVER apply a default value on a user non-answer.** A `gate_unanswered` halts the run. No gate falls back to `en`, `30d`, `declined`, or any other "reasonable default" — the cost of guessing wrong (wrong subject, wrong window, wrong language, a PII default) is a full re-run or a privacy incident, so the gate halts instead.
+
+---
+
+## Section 4: Cross-references
+
+| File | Use |
+|---|---|
+| `references/research_dimensions.md` §1 | The 4 gates at a glance (canonical) |
+| `references/research_dimensions.md` §2 | Per-gate behavioral spec (inputs, verbatim prompts, outputs) — the contract source for this file |
+| `references/research_dimensions.md` §3 | Data source dispatch after the four gates resolve |
+| `references/research_dimensions.md` §4 | Core invariants (email never persisted, no sticky, single subject) |
+| `references/research_dimensions.md` §5 | Subject identity contract (`subject_entity` vs `parent_or_issuer_entity`) |
+| `agents/subject_confirm_gate.md` | Gate 1 implementation |
+| `agents/sec_email_gate.md` | Gate 2 implementation (conditional; runtime-only UA) |
+| `agents/freshness_gate.md` | Gate 3 implementation |
+| `agents/language_gate.md` | Gate 4 implementation (writer dispatch modes) |
+| `workflow_meta.json` | Machine-readable phase order, `depends_on` chain, conditional trigger, `always_exits` — the phase source of truth |
+| `references/data_source_registry.md` §6 | SEC EDGAR consumer contract, two-UA model (consumes Gate 2's runtime `sec_user_agent`) |
+| `references/equity_incidents_archive.md` | I-003 origin (Phase A user_agent leak) |
+| `references/TODO.md` TD-018 | Gen 1/2 residue sweep (where retired gate names are tracked) |

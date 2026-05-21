@@ -278,6 +278,7 @@ The mid-flight restart from 7-gate to 4-gate design deleted the in-progress 7-ga
 4. **references/workflow_diagram.md** — Gen 1 interactive gates + USER.md references.
 5. **tools/io/incident_trigger.py:75** — emits P0_lang / P0_sec_email / P0_palette in an incident message (Gen 1 phase names).
 6. **README.md** — references `skills_repo/er/ep` submodule architecture and USER.md.template (both removed).
+7. **workflow_meta.json P11_render constraint** — contains `"constraint": "palette must equal P0_palette"` referencing the deleted P0_palette gate. Part of the broader P7-P11 card pipeline question (whether crypto research needs card output at all). Defer until card pipeline scope decision is made for B.5+ or later. Surfaced during B.0 Step 5 Sub-task 5A review.
 
 **Why deferred:** these files are each scheduled for rewrite in a later step or sub-phase. SKILL/README/HARNESS rewrites are appropriate for end-of-B.0 or B.1 start; phase_contract.md is Step 5; maintenance/workflow_diagram are pending rewrite alongside Phase B documentation pass. Touching them piecemeal during pre-Step-4 cleanup would mix concerns.
 
