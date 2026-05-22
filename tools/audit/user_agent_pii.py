@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 URL_RE = re.compile(r"https?://[^\s\"'<>),]+")
-PUBLIC_USER_AGENT = "EquityResearchSkill/1.0"
+PUBLIC_USER_AGENT = "StackAnamnesis/1.0"
 
 
 def _load_json(path: Path) -> dict:

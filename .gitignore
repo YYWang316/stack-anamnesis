@@ -12,6 +12,10 @@ db/*.sqlite-shm
 # Run artifacts — local only, never commit
 output/
 
+# B.1 fetcher raw outputs (real data, never commit; keep the empty dir)
+meta/raw/*
+!meta/raw/.gitkeep
+
 # Sector reports rebuild on demand
 db/sector_reports/*/
 !db/sector_reports/.gitkeep

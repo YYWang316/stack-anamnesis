@@ -219,7 +219,9 @@ Original premise: `scope_gate` path (a) narrow needed an internal restart-from-g
 
 ## TD-016 — Repoint user_agent_pii.py PUBLIC_USER_AGENT to StackAnamnesis/<version>
 
-**Status:** active 2026-05-13 (opened during B.0 #1.5 SEC EDGAR work; backfilled 2026-05-13).
+**Status:** **DONE in B.1.0 (commit pending) 2026-05-21.** `tools/audit/user_agent_pii.py` `PUBLIC_USER_AGENT` repointed `EquityResearchSkill/1.0` → `StackAnamnesis/1.0`; the paired test `tests/test_user_agent_pii.py` brand fixtures updated to match. All 4 PII tests + P12 aggregate suite pass. No env-var/shared-constant parameterization done (single live consumer; revisit if a second consumer appears). Equity-slug fixtures still present in `tests/test_db_pii.py:47` and `tests/test_aggregate_p12.py:129` (sample data, not the constant — not swept here; archive citations in `references/equity_incidents_archive.md` preserved as the historical I-003 leak record).
+
+**Status (original):** active 2026-05-13 (opened during B.0 #1.5 SEC EDGAR work; backfilled 2026-05-13).
 
 tools/audit/user_agent_pii.py hardcodes:
 ```
@@ -272,7 +274,7 @@ agents/freshness_gate.md Step 1 reads {Subject}.tge_date from the yaml to comput
 
 The mid-flight restart from 7-gate to 4-gate design deleted the in-progress 7-gate agent files (commit 7c2d42a) but left Phase A equity-era and Phase B 7-gate references in several files that were not part of the restart's deletion scope:
 
-1. **SKILL.md** — still references Gen 1 gates: P0_lang, P0_sec_email, P0_palette, USER.md sticky mechanism.
+1. ~~**SKILL.md** — still references Gen 1 gates: P0_lang, P0_sec_email, P0_palette, USER.md sticky mechanism.~~ **DONE in B.1.0 (commit pending)** — Gen 1/2 residue swept: P0 section rewritten to the 4-gate flow (subject_confirm / sec_email / freshness / language), `USER.md` boot-order entry + sticky-source mechanism removed, retired `palette gate` dropped, ER/EP lazy-load note de-equitized. Added a data-sources subsection (13-source registry, 11 active per TD-021) and the I-003 two-UA invariant. Frontmatter + intro reframed equity → crypto domain. Residue grep (`P0_lang|P0_palette|P0_output_format|P0_scope|P0_intent|P0_subject_class|USER\.md|skills_repo`) is now clean. (Note: `db/equity_kb.sqlite` retained verbatim — it is the real DB filename, not a doc reference; rename is a separate code task.)
 2. **references/phase_contract.md** — references Gen 2 gates: P0_output_format, P0_scope. (Scheduled for Step 5 rewrite; this TD overlaps but tracks the residue specifically.)
 3. **references/maintenance.md** — equity locked-template / submodule discipline (Gen 1 framing).
 4. **references/workflow_diagram.md** — Gen 1 interactive gates + USER.md references.

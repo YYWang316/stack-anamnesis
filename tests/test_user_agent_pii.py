@@ -6,7 +6,7 @@ from pathlib import Path
 from tools.audit.user_agent_pii import audit_run
 
 
-def _seed_run(tmp_path: Path, *, public_user_agent: str | None = "EquityResearchSkill/1.0") -> Path:
+def _seed_run(tmp_path: Path, *, public_user_agent: str | None = "StackAnamnesis/1.0") -> Path:
     run_dir = tmp_path / "Run"
     (run_dir / "meta").mkdir(parents=True)
     (run_dir / "logs").mkdir()
@@ -15,7 +15,7 @@ def _seed_run(tmp_path: Path, *, public_user_agent: str | None = "EquityResearch
         "run_id": "ua1",
         "ticker": "INTU",
         "sec_email": email,
-        "sec_user_agent": f"EquityResearchSkill/1.0 ({email})",
+        "sec_user_agent": f"StackAnamnesis/1.0 ({email})",
     }
     if public_user_agent is not None:
         run_meta["public_user_agent"] = public_user_agent
@@ -27,8 +27,8 @@ def test_user_agent_pii_passes_sec_only_email_logs(tmp_path: Path) -> None:
     run_dir = _seed_run(tmp_path)
     (run_dir / "logs" / "requests.log").write_text(
         "GET https://data.sec.gov/submissions/CIK0000896878.json "
-        "UA=EquityResearchSkill/1.0 (user@example-real.com)\n"
-        "GET https://investors.intuit.com/ UA=EquityResearchSkill/1.0\n",
+        "UA=StackAnamnesis/1.0 (user@example-real.com)\n"
+        "GET https://investors.intuit.com/ UA=StackAnamnesis/1.0\n",
         encoding="utf-8",
     )
 
@@ -51,7 +51,7 @@ def test_user_agent_pii_fails_email_on_non_sec_url(tmp_path: Path) -> None:
     run_dir = _seed_run(tmp_path)
     (run_dir / "meta" / "run.jsonl").write_text(
         '{"event":"fetch","url":"https://investors.intuit.com/news",'
-        '"user_agent":"EquityResearchSkill/1.0 (user@example-real.com)"}\n',
+        '"user_agent":"StackAnamnesis/1.0 (user@example-real.com)"}\n',
         encoding="utf-8",
     )
 
