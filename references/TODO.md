@@ -379,6 +379,35 @@ Three of the seven conditional data sources in `references/data_source_registry.
 
 ---
 
+## TD-022 — SKILL.md description drift in mounted equivalents
+
+**Status:** active 2026-05-23 (opened during B.1.1 verification).
+
+`test_skill_mount_parity::test_mounts_mirror_root_description` 
+fails after B.1.0's equity→crypto frontmatter reframe (commit 
+031a506). The root `SKILL.md` description was updated to crypto 
+domain, but the mounted equivalents (skills_repo or similar) 
+retain the equity description.
+
+**Scope:** find every mount carrying a `SKILL.md`-derived 
+description and propagate the crypto reframe so the parity test 
+passes. Likely 1–3 files under skills_repo/ or similar; locate via 
+`grep -r "research Apple\|6 PNG cards\|palette gate" .`
+
+**Why deferred from B.1.0:** the mount-parity drift was not visible 
+in B.1.0 verification (the prompt anticipated 3 pre-existing 
+failures; the actual baseline was 3 + this drift = 4). Surfaced 
+during B.1.1's full pytest run.
+
+**Related:** TD-018 item 1 (SKILL.md sweep) — this is the natural 
+follow-up. Bundle with other TD-018 follow-ups or do as a 
+standalone commit before B.1.2.
+
+**Architectural impact:** none for fetcher work. Test failure is 
+documentation drift, not runtime behavior.
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.
