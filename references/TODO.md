@@ -408,6 +408,59 @@ documentation drift, not runtime behavior.
 
 ---
 
+## TD-023 — Land "prefer-intent-over-literal-prompt" lesson in MEMORY.md
+
+**Status:** active 2026-05-23 (opened during B.1.2 review).
+
+The pattern has now surfaced three times in B-phase across different 
+domains, each time a judgment-call deviation from a prompt's literal 
+instruction produced a strictly better outcome:
+
+1. **B.0 Step 3d (language_gate)** — agent preferred the sibling 
+   pattern over a prompt deviation that read like a typo. Surfaced 
+   the divergence explicitly rather than silently following the 
+   prompt. (Existing MEMORY.md lesson #1: "prefer-pattern-over-prompt".)
+2. **B.1.0 SKILL.md sweep (commit 031a506)** — prompt said "sweep 
+   Gen 1/2 residue"; agent extended sweep to include the equity→crypto 
+   frontmatter reframe, recognizing that domain residue at the skill 
+   activation surface was the same category of residue at a different 
+   conceptual layer.
+3. **B.1.2 CoinGecko resolution (commit pending)** — prompt said 
+   "pick top exact-symbol match"; following literally produced a 
+   wrong result (meme coin matching the symbol "BITCOIN" beat real 
+   Bitcoin). Agent changed to "match symbol or name, tie-break by 
+   market_cap_rank" — the canonical intent. Added regression test.
+
+**Why this needs to land:** instance 1 is already in MEMORY.md as 
+the sibling-pattern lesson, but framed narrowly (markdown wrapping, 
+prompt typos). Instances 2 and 3 generalize it: the principle applies 
+to any layer where literal-prompt-following produces a result that 
+contradicts the canonical contract, the user's clear intent, or the 
+production behavior the user actually wants. The current lesson 
+under-states this.
+
+**Scope:** rewrite the existing "prefer-pattern-over-prompt" lesson 
+in MEMORY.md to the generalized form, with the three instances cited 
+as evidence. Frame the rule as: when a prompt's literal instruction 
+would produce a result that contradicts (a) the canonical contract 
+in references/, (b) the sibling pattern in the same file class, or 
+(c) a production correctness test, prefer the intent and surface the 
+deviation explicitly rather than silently choosing either path.
+
+**Why deferred from B.1.2:** atomic commit principle — B.1.2 is 
+"CoinGecko fetcher + symbol-collision fix", not "fetcher + methodology 
+lesson update". MEMORY.md changes belong in their own commit.
+
+**Bundle with:** before B.1.3, single commit that lands TD-023 + 
+also addresses TD-022 if I want to clear documentation drift first. 
+Otherwise standalone.
+
+**Architectural impact:** none for fetchers. Documentation / 
+methodology only — but load-bearing because future agents/sessions 
+will internalize this principle from MEMORY.md.
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.
