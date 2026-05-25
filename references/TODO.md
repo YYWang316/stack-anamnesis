@@ -531,6 +531,58 @@ remains in place for the future unarchive (no cleanup needed).
 
 ---
 
+## TD-025 — Messari fetcher deferred (free-tier entitlement too narrow)
+
+**Status:** active 2026-05-25 (opened during B.1.7 planning after attempting implementation and live-probing the API with the user's cheapest-tier key).
+
+**Why deferred:** Messari restructured their API and pricing in 2024-2025. The free tier documented in registry §11 and public materials (messari.io/api claims "40K+ assets, 20 req/min") does not match the actual entitlement of a free-tier key in 2026.
+
+Live probing with user's free-tier key (~/.config/anamnesis/messari.key) revealed the actual accessible surface:
+
+| Endpoint | Status |
+|---|---|
+| `api/v1/assets/{slug}/metrics` (documented free) | 404 — route deprecated |
+| `metrics/v1/assets/.../metrics` (current) | 401 "Enterprise membership required" |
+| `asset/v1/assets/.../profile` | 403 "your team does not have access" |
+| `token-unlocks/v1/...`, `intel/v1/...` | 403 no access |
+| `metrics/v2/assets[/details]` | 200, but **BTC + ETH ONLY** (totalRows: 2) |
+
+The only working endpoint returns exactly 2 assets — Bitcoin and Ethereum. All `slug=` and `symbol=` filter params are silently ignored. docs.messari.io/api-reference/permissions confirms: "Enterprise Users: Unlimited access to Market Data. All Users with an API Key: MessariAI chat completion only."
+
+**Stack Anamnesis impact:** Messari's value for our stablecoin / fintech vertical was analyst-cleaned profiles for stablecoin issuers, token unlock schedules, and sector classification — exactly the surface gated to Enterprise. For BTC + ETH market data we already have CoinGecko (§4), CoinMarketCap (§13), and Alchemy RPC (§5) which fully cover that need.
+
+**B.1 active fetcher count now: 7** (was 8 after deferring Dune):
+- DefiLlama (§1) — TVL
+- CoinGecko (§4) — price + market cap (primary)
+- Etherscan (§3) — chain explorer
+- SEC EDGAR (§6) — filings
+- Alchemy RPC (§5) — raw chain state
+- CoinMarketCap (§13) — price cross-check
+- L2Beat (§12) — pending B.1.7 (shifts up to fill the slot Messari
+  would have taken)
+
+**Architectural impact:** none. Implementation files (3 drafts) were written during this turn but never committed; they are deleted after this TD lands.
+
+**To unarchive:**
+1. Acquire an Enterprise Messari key (paid subscription, or
+   successful NYU Blockchain Lab academic outreach to
+   api@messari.io — historically Messari has worked with academic
+   researchers but no public student program exists as of 2026-05-25).
+2. Re-verify the active endpoint surface (Messari's API structure
+   may shift again).
+3. Re-implement `agents/fetchers/messari_fetcher.md` +
+   `tools/fetchers/messari_fetch.py` per the institutional spec
+   (slug-based metrics + profile + token-unlocks).
+4. Update this TD with the unarchive date.
+
+**Coverage gap:** lose access to (a) analyst-cleaned qualitative profiles for non-BTC/ETH assets, (b) token unlock / vesting schedules, (c) fundraising data, (d) Messari research reports. Workarounds: SEC EDGAR for issuer financials, CoinGecko for asset metadata, manual research for token unlocks if needed for a specific YYFoundry episode.
+
+**API key already stored** at ~/.config/anamnesis/messari.key — remains in place for the future unarchive (no cleanup needed).
+
+**Related:** TD-024 (Dune deferred — also free-tier-shape mismatch).
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.
