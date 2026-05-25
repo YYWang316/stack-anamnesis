@@ -410,7 +410,12 @@ documentation drift, not runtime behavior.
 
 ## TD-023 — Land "prefer-intent-over-literal-prompt" lesson in MEMORY.md
 
-**Status:** active 2026-05-23 (opened during B.1.2 review).
+**Status:** CLOSED 2026-05-25. Landed in MEMORY.md as "Prefer reality 
+over the literal prompt" (B.1 completion turn). Generalized beyond the 
+original 3-instance scope to 8 applications across B.0 + B.1.0–B.1.7; 
+5 of 8 caught data-correctness bugs. Historical body retained below.
+
+**Status (historical):** active 2026-05-23 (opened during B.1.2 review).
 
 The pattern has now surfaced three times in B-phase across different 
 domains, each time a judgment-call deviation from a prompt's literal 
