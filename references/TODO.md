@@ -461,6 +461,76 @@ will internalize this principle from MEMORY.md.
 
 ---
 
+## TD-024 — Dune Analytics fetcher deferred (query_id discovery friction)
+
+**Status:** active 2026-05-25 (opened during B.1.6 planning, deferring 
+the originally-planned B.1.6 = Dune to a later phase).
+
+**Why deferred:** Dune Analytics is fundamentally different from 
+the other 10 sources in `references/data_source_registry.md`:
+
+- **Other sources are封装 APIs** (REST or RPC): one endpoint returns 
+  structured data immediately for any subject. The fetcher pattern 
+  is simple — pass subject + freshness_window, get standardized data.
+- **Dune is a SQL execution engine.** Useful data requires either 
+  (a) writing custom SQL, or (b) referencing a `query_id` of an 
+  existing Dune query authored by someone else.
+
+The `query_id` discovery friction breaks Stack Anamnesis's automation 
+goal:
+
+- Public Dune `query_id`s can be deleted, changed to private, or 
+  silently modified by their authors at any time.
+- Each research run would require manual research on dune.com to 
+  find a currently-working public query matching the analytical 
+  need.
+- No stable `subject_type → query_id` mapping survives — author 
+  ownership is the breakage axis.
+- Custom SQL authoring is real work, not a fetcher task.
+
+The other 5 active fetchers cover ~80% of typical stablecoin / 
+fintech research:
+- TVL: DefiLlama (§1)
+- Price + market cap: CoinGecko (§4), CoinMarketCap (§13)
+- On-chain: Etherscan (§3), Alchemy RPC (§5)
+- Filings: SEC EDGAR (§6)
+
+Dune's unique strength — deep custom on-chain analytics (e.g. 
+"top USDC holders," "stablecoin DEX vs bridge vs CEX flow split") — 
+is currently outside Stack Anamnesis's research scope.
+
+**B.1 active fetcher count now: 10** (was 11). Architectural impact: 
+none on existing 5 shipped fetchers; B.1 plan continues with 
+CoinMarketCap, Messari, L2Beat, Electric Capital, Artemis 
+(pending student plan).
+
+**To unarchive:**
+1. The user has an actual research need requiring custom SQL or 
+   Dune's enriched stablecoin/DEX tables (e.g. preparing a 
+   YYFoundry episode that requires `stablecoin.transfers` 
+   joined with `dex.trades`).
+2. Build a separate query registry file at 
+   `references/dune_query_registry.yaml` mapping research questions 
+   to currently-verified query_ids.
+3. Write `agents/fetchers/dune_fetcher.md` + 
+   `tools/fetchers/dune_fetch.py` per the async execution pattern 
+   (POST execute → poll status → GET results).
+4. Update this TD with the unarchive date and the research run 
+   that motivated it.
+
+**Coverage gap:** lose access to deep DEX/bridge/CEX flow 
+classification, Dune Spellbook enriched tables, and any 
+on-chain analytics requiring SQL joins. Workarounds: Alchemy RPC 
+for raw eth_call reads; Etherscan for top-level transfers; 
+DefiLlama for aggregated TVL/volume.
+
+**API key already stored** at ~/.config/anamnesis/dune.key — 
+remains in place for the future unarchive (no cleanup needed).
+
+**Related:** TD-021 (paid sources archived).
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.
