@@ -4,7 +4,10 @@
 > v1.2 changelog: 移除 Sector/Thematic subject type（暂延 Phase C）· 
 > 移除 Audience 字段（改为 Output Type 派生）· 
 > Output Type 表加 Audience 列 + workshop/language 说明 · 
-> Mode A/B 描述澄清自动检测 · 加 Asset/Token subject type
+> Mode A/B 描述澄清自动检测 · 加 Asset/Token subject type · 
+> Sources表 sync with B.1 ship (improvement #1) · 
+> 加 Part 11.5 Data acquisition workflow (improvement #2) · 
+> Part 5 metrics 加 [AUTO]/[SEMI-AUTO]/[MANUAL] tags (improvement #3)
 
 > v1.1 changelog: Mode B重排（先news后thesis） · Output Type · 七层框架双版本（YYFoundry原版 + crypto-fintech mapping） · Evidence Table · Data Availability · Distribution vs Technology filter · Valuation拆分（有token / 无token） · Charts按token可用性分组 · 个人品牌内容剥离到文末workshop区
 
@@ -217,44 +220,50 @@ both 模式会并行产出两份独立 HTML（不是双语对照）。
 
 ## Part 5 — On-Chain Metrics `[Mode A required; Mode B if applicable]`
 
+> **Metric annotations (NEW v1.2):**
+> - `[AUTO: <source>]` — analysis layer reads field directly from envelope; no computation needed
+> - `[SEMI-AUTO: <source> + <formula>]` — analysis layer computes via fixed formula or cross-source aggregation
+> - `[MANUAL: <reason>]` — data unavailable in B.1 fetchers or requires human judgment; researcher fills manually
+> See Part 11.5 for fetcher invocation and envelope shape; see `tools/fetchers/` for source modules.
+
 ### 5.1 通用指标
-- TVL over time
-- Daily / Monthly Active Addresses
-- Transactions (count & volume)
-- Fees / Revenue
-- User retention（cohort analysis）
-- Token incentives占TVL的比例
+- TVL over time `[AUTO: DefiLlama historical TVL series]`
+- Daily / Monthly Active Addresses `[AUTO: Etherscan stats; SEMI-AUTO if cross-chain aggregation needed]`
+- Transactions (count & volume) `[AUTO: Etherscan; Alchemy for cross-validation]`
+- Fees / Revenue `[AUTO: DefiLlama protocol fees endpoint]`
+- User retention（cohort analysis） `[MANUAL: needs Dune (TD-024 deferred) or custom analysis on Etherscan tx history]`
+- Token incentives占TVL的比例 `[SEMI-AUTO: DefiLlama emission data / DefiLlama TVL; ratio = emission_value_30d / current_tvl]`
 
 ### 5.2 Chain-specific
-- Stablecoin supply（USDC / USDT / native breakdown）
-- Bridge inflow / outflow（net flow方向）
-- DEX volume on chain
-- Protocol count
-- Validator count / Nakamoto coefficient
-- Outage / reorg history
+- Stablecoin supply（USDC / USDT / native breakdown） `[AUTO: DefiLlama stablecoins endpoint per chain]`
+- Bridge inflow / outflow（net flow方向） `[SEMI-AUTO: DefiLlama bridges endpoint; net = inflow - outflow]`
+- DEX volume on chain `[AUTO: DefiLlama DEX volume endpoint]`
+- Protocol count `[AUTO: DefiLlama protocols filter by chain]`
+- Validator count / Nakamoto coefficient `[MANUAL: chain-specific; Alchemy may surface validator set but Nakamoto coefficient is interpretation]`
+- Outage / reorg history `[MANUAL: external sources (chain status pages, post-mortems); not in B.1 fetchers]`
 
 ### 5.3 Payment chain–specific 【关键：TVL不是核心】
 对Arc / Tempo / Plasma / Codex这类，重点看：
 
-- Stablecoin transfer volume & count
-- Average transaction size（retail vs institutional）
-- Median fee
-- Finality time
-- Failed transaction rate
-- On / off-ramp partners
-- Merchant / fintech / bank adoption
-- Cross-border corridors
-- Non-speculative usage share
-- ⭐ **Transaction Volume / TVL ratio** — 比TVL本身有意义，payment chain不需要大量资产长期锁仓
+- Stablecoin transfer volume & count `[SEMI-AUTO: Etherscan token transfers; aggregate by USDC contract address]`
+- Average transaction size（retail vs institutional） `[SEMI-AUTO: Etherscan, avg = total_value / tx_count; retail vs institutional split is MANUAL]`
+- Median fee `[SEMI-AUTO: Etherscan tx list; compute median of gas-fee USD over window]`
+- Finality time `[MANUAL: chain protocol spec (not in fetchers); ~12 seconds Ethereum, ~2 seconds Solana — document by lookup]`
+- Failed transaction rate `[SEMI-AUTO: Etherscan; failed_tx / total_tx]`
+- On / off-ramp partners `[MANUAL: project documentation / web research; not in B.1 fetchers]`
+- Merchant / fintech / bank adoption `[MANUAL: web research / project announcements; not quantifiable from on-chain data]`
+- Cross-border corridors `[MANUAL: project-specific business data; requires HIFI / Stripe / Circle equivalents not in B.1]`
+- Non-speculative usage share `[MANUAL: interpretation — distinguishing payment from speculation requires heuristics + judgment]`
+- ⭐ **Transaction Volume / TVL ratio** — 比TVL本身有意义，payment chain不需要大量资产长期锁仓 `[SEMI-AUTO: Etherscan volume / DefiLlama TVL; cross-source ratio]`
 
 ### 5.4 DeFi protocol–specific
-- Utilization rate（lending）
-- Liquidation volume & bad debt（lending）
-- Open Interest（perp）
-- Slippage / liquidity depth（DEX）
-- Insurance fund（perp / lending）
-- Depositors / borrowers count
-- Real yield vs subsidized yield
+- Utilization rate（lending） `[SEMI-AUTO: DefiLlama protocol detail; utilization = borrowed / supplied]`
+- Liquidation volume & bad debt（lending） `[SEMI-AUTO: DefiLlama liquidations endpoint; bad debt = MANUAL interpretation]`
+- Open Interest（perp） `[AUTO: DefiLlama derivatives endpoint per protocol]`
+- Slippage / liquidity depth（DEX） `[MANUAL: slippage requires pool-depth simulation; not directly in B.1 fetchers]`
+- Insurance fund（perp / lending） `[MANUAL: protocol-specific fund address; read via Alchemy if address known, else project docs]`
+- Depositors / borrowers count `[MANUAL: unique-address counts need Dune (TD-024 deferred) or Etherscan event-log aggregation]`
+- Real yield vs subsidized yield `[SEMI-AUTO: DefiLlama fees + emissions; real = fee_revenue / TVL vs subsidized = emission_value / TVL]`
 
 ---
 
