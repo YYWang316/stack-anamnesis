@@ -405,6 +405,91 @@ both 模式会并行产出两份独立 HTML（不是双语对照）。
 
 ---
 
+## Part 11.5 — Data acquisition workflow `[Both, NEW v1.2]`
+
+How to get raw data into the workflow before filling template sections. 
+This bridges Stack Anamnesis fetchers (B.1 ship) with template fill.
+
+### Step 1: Identify required fetchers by subject_type
+
+| Subject Type | Required Fetchers | Notes |
+|--------------|-------------------|-------|
+| **Chain (L1)** | DefiLlama, CoinGecko, Etherscan, Alchemy RPC | Add CoinMarketCap for price cross-check |
+| **Chain (L2)** | DefiLlama, L2Beat, CoinGecko, Alchemy RPC, Etherscan | L2Beat = TVS + stage + risks |
+| **DeFi Protocol** | DefiLlama, Etherscan, CoinGecko | Etherscan for contract analysis |
+| **Asset / Token** | CoinGecko, CoinMarketCap, Etherscan, Alchemy RPC | Alchemy for live `totalSupply`; CMC as cross-check |
+| **Stablecoin Issuer** | All 7 (esp. SEC EDGAR if listed) | Circle = CIK 0001876042; Tether = not listed; PYUSD via PayPal listings |
+| **Payment Chain** | DefiLlama, Alchemy RPC, Etherscan, L2Beat (if L2) | Custom analytics via Dune deferred (TD-024) |
+| **News Reaction** | All applicable per the central subject | Time-window may include 7d for immediate post-event data |
+
+### Step 2: Invoke each fetcher
+
+Standard pattern (one fetcher at a time):
+
+```bash
+python3 tools/fetchers/<source>_fetch.py \
+  --subject <subject> \
+  --subject-type <subject_type> \
+  --freshness-window <window>
+```
+
+**Where**:
+- `<source>` ∈ `{defillama, coingecko, etherscan, sec_edgar, alchemy, coinmarketcap, l2beat}`
+- `<subject>` — the canonical name (e.g. `USDC`, `Bitcoin`, `Arbitrum`); for chain-explorer fetchers (Etherscan, Alchemy) use the contract address (`0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` for USDC); for SEC EDGAR use the issuer name (`Circle`)
+- `<subject_type>` ∈ `{stablecoin_issuer, orchestrator, wallet, chain, agentic_payment_layer}` (per `references/subject_taxonomy.md`)
+- `<window>` ∈ `{7d, 30d, 90d, quarter, 1 year, since_TGE}` (per registry contract)
+
+**SEC EDGAR adds a required flag** (when invoking):
+```bash
+python3 tools/fetchers/sec_edgar_fetch.py \
+  --subject Circle --subject-type stablecoin_issuer --freshness-window 30d \
+  --sec-email <your-research-email>
+```
+
+The email is process-memory only, never persisted (I-003 invariant; see `MEMORY.md` Privacy invariants).
+
+### Step 3: Raw envelopes land at `meta/raw/<source>/`
+
+Every fetcher writes a single JSON file with the 6-key envelope shape:
+
+```json
+{
+  "subject": "<subject>",
+  "subject_type": "<subject_type>",
+  "freshness_window": "<window>",
+  "endpoint": "<canonical URL where the data was fetched from>",
+  "fetched_at": "<UTC ISO 8601 timestamp>",
+  "raw_response": { /* verbatim API response, possibly nested by sub-call */ }
+}
+```
+
+**File path pattern**:
+````
+meta/raw/<source>/<subject_slug>_<utc_compressed>.json
+````
+
+**Examples**:
+- `meta/raw/defillama/usdc_20260526T143052Z.json`
+- `meta/raw/sec_edgar/circle_cik0001876042_20260526T143415Z.json`
+- `meta/raw/alchemy/0xa0b86991_chaineth_20260526T143521Z.json`
+
+**Gitignored**: `meta/raw/*` is excluded from version control (raw data is time-sensitive, may be large, and not source code). Only `meta/raw/.gitkeep` is committed to preserve the empty directory structure.
+
+### Step 4: Analysis layer reads envelopes → fills template fields
+
+> **B.2 future**: An analysis layer (planned, not yet built) will read the latest envelope per source for a given subject, extract template-relevant fields, and produce a draft report. For now, this is **manual**: the researcher (or Claude Code agent) reads `meta/raw/<source>/<subject>_*.json` files and fills template sections by hand.
+
+**Manual workflow (current B.1 → B.2 transition)**:
+1. After fetchers complete, list outputs: `ls -la meta/raw/*/`
+2. For each `Part 1`-`Part 11` section in this template, open the relevant envelope(s) and copy/synthesize the needed data
+3. Use the `[AUTO]` / `[SEMI-AUTO]` / `[MANUAL]` tags (added in improvement #3, next turn) to prioritize which sections analysis layer should automate first
+
+### Step 5: After fill — return to template Part 12
+
+With raw data in hand, the rest of the template (charts, data sources cited in Evidence Table, Quality Self-Check) proceeds normally.
+
+---
+
 ## Part 12 — Required Charts & Data `[Both, updated v1.1]`
 
 **目标：5–8张图。按subject可用性挑选**，不要为补图而补图。
