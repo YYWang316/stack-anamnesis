@@ -62,14 +62,29 @@ def test_endpoint_chain() -> None:
 
 
 def test_endpoint_stablecoin_is_list_lookup() -> None:
+    # Stablecoins are served from the dedicated subdomain, NOT api.llama.fi.
     assert dl._endpoint("USDC", "stablecoin") == (
-        "https://api.llama.fi/stablecoins?includePrices=true"
+        "https://stablecoins.llama.fi/stablecoins?includePrices=true"
     )
 
 
 def test_endpoint_unknown_type_raises() -> None:
     with pytest.raises(dl.DefiLlamaFetchError):
         dl._endpoint("USDC", "nonsense")
+
+
+# --- base-host routing (regression: stablecoins live on their own subdomain) --
+
+def test_stablecoin_endpoint_routes_to_stablecoins_host() -> None:
+    assert dl._endpoint("USDC", "stablecoin").startswith(dl.BASE_STABLECOINS)
+    assert "stablecoins.llama.fi" in dl._endpoint("USDC", "stablecoin")
+
+
+def test_protocol_and_chain_endpoints_route_to_api_host() -> None:
+    assert dl._endpoint("Aave", "protocol").startswith(dl.BASE_API)
+    assert dl._endpoint("Ethereum", "chain").startswith(dl.BASE_API)
+    # api host must not be the stablecoins subdomain
+    assert "stablecoins.llama.fi" not in dl._endpoint("Aave", "protocol")
 
 
 # --- fetch: success ---------------------------------------------------------
@@ -103,14 +118,20 @@ def test_fetch_stablecoin_resolves_id_then_chart(monkeypatch: pytest.MonkeyPatch
 
     def fake_get(url: str, **_: Any) -> _FakeResponse:
         calls.append(url)
-        return _FakeResponse(200, listing if "stablecoins" in url else chart)
+        # Discriminate on a path-unique token: the host is now stablecoins.llama.fi
+        # for BOTH legs, so match the list endpoint by its query string instead.
+        return _FakeResponse(200, listing if "includePrices" in url else chart)
 
     monkeypatch.setattr(dl.requests, "get", fake_get)
 
     payload = dl.fetch("USDC", "stablecoin", "90d")
 
-    assert calls[0] == "https://api.llama.fi/stablecoins?includePrices=true"
-    assert payload["endpoint"] == "https://api.llama.fi/stablecoincharts/all?stablecoin=2"
+    # Both legs of the two-step stablecoin path hit stablecoins.llama.fi.
+    assert calls[0] == "https://stablecoins.llama.fi/stablecoins?includePrices=true"
+    assert all("stablecoins.llama.fi" in u for u in calls)
+    assert payload["endpoint"] == (
+        "https://stablecoins.llama.fi/stablecoincharts/all?stablecoin=2"
+    )
     assert payload["raw_response"] == chart
 
 
@@ -177,3 +198,17 @@ def test_live_smoke_aave_protocol() -> None:
     assert isinstance(payload["raw_response"], dict)
     # DefiLlama /protocol/<slug> always carries the protocol name.
     assert payload["raw_response"].get("name")
+
+
+@pytest.mark.skipif(os.environ.get("SKIP_LIVE") == "1", reason="SKIP_LIVE=1 set")
+def test_live_smoke_usdc_stablecoin() -> None:
+    # Regression for the api.llama.fi -> stablecoins.llama.fi host bug: this call
+    # 404'd before the fix. USDC must resolve and return a non-empty supply chart.
+    payload = dl.fetch("USDC", "stablecoin", "30d")
+    assert payload["subject_type"] == "stablecoin"
+    assert payload["endpoint"].startswith("https://stablecoins.llama.fi/stablecoincharts/all")
+    chart = payload["raw_response"]
+    assert isinstance(chart, list) and chart, "stablecoin chart must be a non-empty list"
+    # Each entry carries a date + total circulating supply.
+    assert "date" in chart[-1]
+    assert "totalCirculating" in chart[-1] or "totalCirculatingUSD" in chart[-1]

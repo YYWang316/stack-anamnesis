@@ -32,16 +32,39 @@ allowed_toolsets: ["fetchers", "io"]
   `meta/gates.json -> freshness.value`. Recorded in the output for the downstream
   parser; DefiLlama returns full history, so windowing happens after the fetch.
 
+## Base hosts — DefiLlama is split across two subdomains
+
+DefiLlama does **not** serve everything from one host. Protocol/chain TVL live on
+the main API host; the stablecoins product is a separate service on its own
+subdomain. The implementation defines two constants and routes by endpoint family:
+
+| Constant | Host | Serves |
+|---|---|---|
+| `BASE_API` | `https://api.llama.fi` | `protocol`, `chain` |
+| `BASE_STABLECOINS` | `https://stablecoins.llama.fi` | `stablecoin` (both legs) |
+
+> **Known divergence from earlier spec (fixed):** the fetcher originally routed
+> *all* paths through `api.llama.fi`, which 404s every stablecoin call.
+> Verified live (2026-05): `https://api.llama.fi/stablecoins?includePrices=true`
+> → **404**, `https://stablecoins.llama.fi/stablecoins?includePrices=true` → **200**.
+> The `stablecoin` `subject_type` was unusable until the host split was added.
+
 ## Endpoints by subject_type
 
 | `subject_type` | Endpoint(s) |
 |---|---|
 | `protocol` | `https://api.llama.fi/protocol/<slug>` |
 | `chain` | `https://api.llama.fi/v2/historicalChainTvl/<chain>` |
-| `stablecoin` | Two-step: `https://api.llama.fi/stablecoins?includePrices=true` (resolve `peggedAssetId` by name/symbol), then `https://api.llama.fi/stablecoincharts/all?stablecoin=<peggedAssetId>` |
+| `stablecoin` | Two-step on `stablecoins.llama.fi`: `https://stablecoins.llama.fi/stablecoins?includePrices=true` (resolve `peggedAssetId` by name/symbol), then `https://stablecoins.llama.fi/stablecoincharts/all?stablecoin=<peggedAssetId>` |
 
 Chain and slug names use the lowercase canonical form (registry §1 quirk — e.g.
 `ethereum`, `base`, `arbitrum`, never `Ethereum` or `ETH`).
+
+> **Resolution quirk:** a stablecoin's DefiLlama `name` may differ from its ticker
+> (USDC → name `"USD Coin"`, symbol `"USDC"`, `peggedAssetId` `2`). The resolver
+> matches the subject against **both** `name` and `symbol`, so passing `"USDC"`
+> resolves on the symbol field. The supply chart entries carry `date`,
+> `totalCirculating.peggedUSD`, and `totalCirculatingUSD.peggedUSD`.
 
 ## Auth & headers
 

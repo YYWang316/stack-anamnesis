@@ -35,7 +35,12 @@ import requests
 # rules). DefiLlama is NOT a *.sec.gov host, so the SEC email UA must never reach
 # it; matches tools/audit/user_agent_pii.py's PUBLIC_USER_AGENT.
 PUBLIC_USER_AGENT = "StackAnamnesis/1.0"
-BASE = "https://api.llama.fi"
+# DefiLlama splits its API across two hosts. Protocol/chain TVL live on the main
+# api.llama.fi host; the stablecoins product is served from a *separate* subdomain
+# (stablecoins.llama.fi). Routing all paths through api.llama.fi 404s every
+# stablecoin call (verified live 2026-05). Route by endpoint family, not one BASE.
+BASE_API = "https://api.llama.fi"
+BASE_STABLECOINS = "https://stablecoins.llama.fi"
 RAW_DIR = Path(__file__).resolve().parents[2] / "meta" / "raw" / "defillama"
 
 # Harness pacing contract (registry §1): 1 req/sec ceiling + 100ms jitter,
@@ -72,12 +77,13 @@ def _throttle() -> None:
 def _endpoint(subject: str, subject_type: str) -> str:
     """Primary data endpoint for protocol/chain; stablecoin list for the lookup step."""
     if subject_type == "protocol":
-        return f"{BASE}/protocol/{_slugify(subject)}"
+        return f"{BASE_API}/protocol/{_slugify(subject)}"
     if subject_type == "chain":
-        return f"{BASE}/v2/historicalChainTvl/{_slugify(subject)}"
+        return f"{BASE_API}/v2/historicalChainTvl/{_slugify(subject)}"
     if subject_type == "stablecoin":
         # Step 1 of the two-step stablecoin path: resolve peggedAssetId by name.
-        return f"{BASE}/stablecoins?includePrices=true"
+        # Stablecoins live on the dedicated subdomain, not api.llama.fi.
+        return f"{BASE_STABLECOINS}/stablecoins?includePrices=true"
     raise DefiLlamaFetchError(f"unknown subject_type: {subject_type!r}")
 
 
@@ -117,7 +123,8 @@ def _fetch_stablecoin(subject: str, headers: dict[str, str]) -> tuple[str, Any]:
         raise DefiLlamaFetchError(
             f"subject_not_found_on_defillama: stablecoin={subject!r} not in /stablecoins list"
         )
-    chart_url = f"{BASE}/stablecoincharts/all?stablecoin={pegged_id}"
+    # Second leg also lives on the stablecoins subdomain (not api.llama.fi).
+    chart_url = f"{BASE_STABLECOINS}/stablecoincharts/all?stablecoin={pegged_id}"
     return chart_url, _get_json(chart_url, headers)
 
 
