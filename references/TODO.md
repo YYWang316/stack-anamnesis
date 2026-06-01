@@ -588,6 +588,27 @@ The only working endpoint returns exactly 2 assets — Bitcoin and Ethereum. All
 
 ---
 
+## TD-030 — subject_ref resolver built; front-door disambiguation gate deferred
+
+**Status:** active 2026-06-01 (opened during B.2.6a — first resolver in the analysis-layer trunk: extractor → resolver → aggregator → filler).
+
+**What was built.** `analysis_layer/resolvers/subject_ref.py` with a pure `resolve_subject(name) -> Optional[SubjectRef]` and a `SubjectRef` frozen dataclass added to `analysis_layer/contract.py`. It resolves a canonical subject to the out-of-envelope bindings the extractors/fetchers need but cannot read from an envelope:
+
+- **decimals** — the Alchemy/Etherscan supply-decode arg (USDC = 6), previously hard-coded by the caller.
+- **per-source ids** — each source addresses the same subject by its own id: CoinGecko slug (`usd-coin`), CMC numeric id (`3408`, the key of `quotes_latest.data`), DefiLlama stablecoin id (`2`).
+- **on-chain** — Ethereum-mainnet contract (`0xA0b8…eB48`) + chain (`ethereum`).
+- **issuer / regulatory** — issuer name (Circle) + zero-padded CIK (`0001876042`).
+
+Registry seeded with **USDC ONLY**, every binding harvested from and cross-checked against the real envelopes on disk (`meta/raw/<source>/`, TD-023 grounding). Adding a subject is a data edit. Pure lookup, case-insensitive, unknown → `None` (rule 1: never throws).
+
+**Deferred follow-up (out of scope for B.2.6a):** the **front-door subject-confirm gate** + ambiguity disambiguation — e.g. "PayPal → PYPL (the equity) vs PYUSD (the stablecoin)". subject_ref is only the *lookup*; deciding *which* subject an ambiguous user prompt means belongs to the subject-confirm gate, which lands later. subject_ref deliberately does not branch on ambiguity.
+
+**To advance:**
+1. Populate the registry with the next subjects as real runs surface them (data edits, each cross-checked against a real envelope).
+2. Build the subject-confirm gate that consumes `resolve_subject` and handles the ambiguous-name case before the run commits to a subject.
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.
