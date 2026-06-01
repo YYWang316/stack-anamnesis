@@ -609,6 +609,38 @@ Registry seeded with **USDC ONLY**, every binding harvested from and cross-check
 
 ---
 
+## TD-031 — source_authority resolver built; reconciliation deferred to B.2.7 aggregator
+
+**Status:** active 2026-06-01 (opened during B.2.6b — second resolver in the analysis-layer trunk: extractor → resolver → aggregator → filler).
+
+**What was built.** `analysis_layer/resolvers/source_authority.py` with a pure `authority_for(metric, scope=None) -> Optional[MetricAuthority]` and a `MetricAuthority{metric, primary, scope, cross_checks}` frozen dataclass added to `analysis_layer/contract.py`. It answers, per metric, **which source is authoritative and the ordered cross-checks** — derived from `references/data_source_registry.md` + the README "Source authority" section, not invented. Source slugs match the extractors' `SOURCE` constants exactly, so the aggregator joins on `ExtractedValue.source` with no translation.
+
+Per-metric table (scope noted):
+
+| metric | scope | primary | cross-checks |
+|---|---|---|---|
+| price | — | coingecko | coinmarketcap |
+| market_cap | — | coingecko | coinmarketcap |
+| volume_24h | — | coingecko | coinmarketcap |
+| market_cap_rank | — | coingecko | (sole) |
+| total_supply | **single-chain** | alchemy | etherscan |
+| total_supply | **multi_chain** | coingecko | coinmarketcap |
+| circulating_supply | multi_chain | defillama | coinmarketcap |
+| tvl | — | defillama | (sole) |
+| revenue / assets | — | sec_edgar | (sole) |
+
+**★ Scope split (README scope rule).** `total_supply` carries TWO authorities keyed by `scope` — single-chain on-chain truth (Alchemy primary, Etherscan cross-check) vs the multi-chain aggregate (CoinGecko primary, CMC cross-check). The scope strings match the extractors' `provenance["scope"]` tags verbatim (`"single-chain"` / `"multi_chain"`). `authority_for("total_supply")` with no scope returns `None` on purpose — the two scopes are never collapsed into one ranking.
+
+**Lookup-only.** This resolver does NOT reconcile values, apply tolerance bands, or flag divergence. Pure table lookup; unknown (metric, scope) → `None`, never throws (rule 1).
+
+**Deferred follow-up:** the **B.2.7 aggregator** is the consumer — it reads `authority_for(...)`, then applies the README tolerance bands (±0.5% currency / ~0.2% multi-chain aggregate / ~0.01–0.05% single-chain contemporaneous, accounting for the `as_of` gap) to reconcile a single best value + audit trail and flag divergence.
+
+**To advance:**
+1. Build the B.2.7 aggregator consuming this lookup.
+2. Extend the table as new metrics/sources land (data edits; e.g. a real `tvl`-emitting DefiLlama extractor path, or additional XBRL concepts).
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.

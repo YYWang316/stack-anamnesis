@@ -13,7 +13,7 @@ Design echoes ``tools/audit/_numerics.NumericToken``: a frozen dataclass with
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Mapping, Optional, Tuple, Union
 
 # A typed value is numeric (supply, price), integer (count), or boolean
 # (is_contract). The aggregator branches on ``unit`` to know how to compare.
@@ -103,3 +103,46 @@ class SubjectRef:
     decimals: Optional[int] = None
     issuer: Optional[str] = None
     identifiers: Mapping[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class MetricAuthority:
+    """Which source leads a metric, and in what order to cross-check it.
+
+    When several sources report the SAME metric (price from CoinGecko & CMC;
+    supply from on-chain reads and the multi-chain aggregators; …) the aggregator
+    needs to know who is authoritative and who merely corroborates. This is the
+    *answer* the ``source_authority`` resolver returns — a pure lookup, NOT the
+    reconciliation itself (tolerance bands / divergence flagging are the B.2.7
+    aggregator's job).
+
+    Pure data contract — like ``ExtractedValue`` / ``SubjectRef``, a frozen
+    dataclass with no behaviour.
+
+    Attributes
+    ----------
+    metric:
+        The canonical metric name, matching ``ExtractedValue.metric`` (e.g.
+        ``"price"``, ``"total_supply"``).
+    scope:
+        The reconciliation scope this ranking applies in, matching
+        ``ExtractedValue.provenance["scope"]`` EXACTLY (``"single-chain"`` /
+        ``"multi_chain"``), or ``None`` for a metric with no scope split (price,
+        market_cap, …). The README scope rule forbids reconciling a single-chain
+        on-chain supply against a multi-chain aggregate — so ``total_supply``
+        carries two distinct authorities keyed by ``scope`` and is NEVER
+        collapsed into one ranking.
+    primary:
+        Source slug of the authoritative source — matches an extractor's
+        ``SOURCE`` constant exactly (``"coingecko"``, ``"alchemy"``, …) so the
+        aggregator joins authority to ``ExtractedValue.source`` with no
+        translation.
+    cross_checks:
+        Ordered source slugs that corroborate ``primary`` (best cross-check
+        first). Empty when the metric has a single authoritative source.
+    """
+
+    metric: str
+    primary: str
+    scope: Optional[str] = None
+    cross_checks: Tuple[str, ...] = ()
