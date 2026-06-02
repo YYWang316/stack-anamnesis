@@ -499,3 +499,105 @@ def test_real_usdc_module_aware_fill(capsys):
     ]
     with capsys.disabled():
         print("\n".join(summary))
+
+
+# --------------------------------------------------------------------------- #
+# ★ real end-to-end — B.2.9 change layer (supply momentum) fills the 5.5 A
+#   "Net … supply change" [SEMI-AUTO] slot
+# --------------------------------------------------------------------------- #
+def _section_5_5_a(markdown: str) -> str:
+    """Extract the Part 5.5 'A. Supply & Distribution Dynamics' sub-section for the
+    before/after paste (header down to the next '####' sub-header)."""
+    lines = markdown.splitlines()
+    start = next((i for i, l in enumerate(lines)
+                  if l.startswith("####") and "Supply & Distribution" in l), None)
+    if start is None:
+        return "(5.5 A section not found)"
+    end = next((j for j in range(start + 1, len(lines))
+                if lines[j].startswith("####")), len(lines))
+    return "\n".join(lines[start:end])
+
+
+def test_real_usdc_supply_change_fills_5_5_a(capsys):
+    """★ THE B.2.9 PAYOFF — load the real DefiLlama envelope, compute_supply_change()
+    leg 1/3 of the KEY SIGNAL, CONCATENATE with reconcile(inputs), and fill() the real
+    v1.4 template (stablecoin, Mode A). The 5.5 A "Net … supply change" line must flip
+    from flagged-for-human to "[SEMI-AUTO ✓ COMPUTED]" carrying the computable windows
+    (abs + pct + actual-days) at Medium confidence — while the rest of the report is
+    unchanged (still clean, chain modules still omitted, the KEY SIGNAL verdict NOT
+    auto-decided)."""
+    if not TEMPLATE_V14.exists():
+        pytest.skip("v1.4 template absent")
+    built = _build_usdc_reconciled()
+    if built is None:
+        pytest.skip("no real USDC envelopes on disk")
+    sref, reconciled = built
+
+    from analysis_layer.derivations.supply_change import compute_supply_change
+
+    # the same envelope the filler's other supply slots read
+    env = next(_newest("defillama", "usdc_*.json"), None)
+    if env is None:
+        pytest.skip("no real DefiLlama envelope on disk")
+
+    template = TEMPLATE_V14.read_text(encoding="utf-8")
+
+    # ---- BEFORE: fill WITHOUT the change layer -> the slot is flagged ----- #
+    before = fill(template, reconciled, sref, mode="subject_driven")
+    before_5_5_a = _section_5_5_a(before)
+    assert "NEEDS HUMAN REVIEW [SEMI-AUTO]" in before_5_5_a   # flagged for a human
+    assert "[SEMI-AUTO ✓ COMPUTED" not in before_5_5_a
+
+    # ---- compute leg 1/3 + CONCATENATE with the reconciled values --------- #
+    changes, notes = compute_supply_change(env, sref)
+    assert changes, "real envelope should cover at least one window"
+    after = fill(template, list(reconciled) + changes, sref, mode="subject_driven")
+    after_5_5_a = _section_5_5_a(after)
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    (OUT_DIR / "usdc_b29_supply_change.md").write_text(after, encoding="utf-8")
+
+    # ---- AFTER: the 5.5 A net-change slot is now FILLED ------------------- #
+    assert "[SEMI-AUTO ✓ COMPUTED" in after_5_5_a
+    assert "NEEDS HUMAN REVIEW [SEMI-AUTO]" not in after_5_5_a or \
+        "[SEMI-AUTO ✓ COMPUTED" in after_5_5_a   # the net-change line specifically flipped
+    # the computed windows render as sub-bullets with abs + pct + actual-days
+    by = {rv.metric: rv for rv in changes}
+    for metric, rv in by.items():
+        days = rv.audit["window_days"]
+        assert f"over {days}d" in after_5_5_a
+        # right sign: a rising window shows '+', a falling one '-'
+        sign = "+" if rv.value > 0 else "-"
+        assert f"({sign}" in after_5_5_a
+    assert "actual" in after_5_5_a
+    # single-source-by-nature -> Medium confidence
+    assert "**Medium** (single_source)" in after_5_5_a
+
+    # ---- the KEY SIGNAL verdict is NOT auto-decided (left as template) ---- #
+    assert "☐ CONFIRMATION" in after and "☐ DIVERGENCE" in after
+
+    # ---- the rest of the report is UNCHANGED outside 5.5 A ---------------- #
+    # chain modules still omitted, evidence table + faithfulness flags intact
+    assert "通用指标" not in after and "Utilization rate" not in after
+    assert "News Hook" not in after
+    assert "Stablecoin module" in after and "Path C" in after
+    assert "Auto Evidence Table" in after
+    assert "[AUTO subject_ref]" in after and "Circle" in after
+    # the report BODY (everything before the Evidence Table) is byte-identical
+    # outside the 5.5 A block; the Evidence Table itself legitimately gains the 3
+    # new net-change rows (they are reconciled facts, recorded — not dropped).
+    before_body = before.split("## Auto Evidence Table")[0].replace(before_5_5_a, "")
+    after_body = after.split("## Auto Evidence Table")[0].replace(after_5_5_a, "")
+    assert before_body == after_body
+    # and the new facts DO surface in the Evidence Table at Medium confidence
+    assert "net_supply_change_7d" in after and "Medium (single_source)" in after
+
+    with capsys.disabled():
+        print("\n=== B.2.9 — Part 5.5 A  (BEFORE: flagged) ===")
+        print(before_5_5_a)
+        print("\n=== B.2.9 — Part 5.5 A  (AFTER: computed) ===")
+        print(after_5_5_a)
+        computed = ", ".join(sorted(m.replace("net_supply_change_", "") for m in by))
+        skipped = "; ".join(notes) if notes else "(none)"
+        print(f"\ncomputable windows from real envelope: {computed}")
+        print(f"skipped windows: {skipped}")

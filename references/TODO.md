@@ -708,6 +708,26 @@ Per-metric table (scope noted):
 
 ---
 
+## TD-035 — change layer (supply-momentum derivation); leg 1/3 of the stablecoin KEY SIGNAL
+
+**Status:** active 2026-06-02 (built in B.2.9 — a NEW analysis-layer stage, `analysis_layer/derivations/`, alongside extractor → resolver → aggregator → filler). First "derivation": a secondary fact computed over already-extracted values rather than read from one envelope.
+
+**What was built.** A pure `compute_supply_change(defillama_envelope, subject_ref, windows=(7,30,90), flat_band=0.0005) -> (list[ReconciledValue], list[str])` in `analysis_layer/derivations/supply_change.py`. For each window the DefiLlama historical supply series can cover: `now` = latest point, `then` = point NEAREST to `now − window`; emits one `ReconciledValue` (`metric="net_supply_change_{w}d"`, `value` = signed PERCENT POINTS, `unit="%"`, `scope` = series scope `multi_chain`, `source_used="defillama"`, `agreement="single_source"`, `inputs` = (then, now), `audit` carries BOTH `abs_change` (USD) and `pct_change` (fraction) + `then/now_date`, `actual_days`, `direction`). Real USDC envelope computed all three: 7d +0.24% / 30d −1.62% / 90d +1.52% (none skipped — the series spans 2018→now, daily).
+
+**★ Single-source BY NATURE — why `ReconciledValue` directly, not `ExtractedValue → reconcile`.** Only DefiLlama carries a historical supply TIME SERIES; CoinGecko/CMC/on-chain give a single latest snapshot, no back-series. A window change therefore has nothing to cross-check — no authority contest for `reconcile` to resolve — so the derivation emits `ReconciledValue` with `agreement="single_source"` directly. **Refactor trigger:** IF a 2nd historical-series source ever appears, route both through the aggregator instead.
+
+**★ Non-contemporaneous day-gap honesty** (mirrors the aggregator's drift handling): daily points rarely land exactly on `now − window`, so we take the NEAREST point and RECORD `actual_days` — a nominal "7d" computed over 6.4 real days is labelled as such, never silently presented as exactly 7d. A window whose target predates the series' oldest point (or whose `then` value is 0) is SKIPPED with a note in the returned `notes` list — never faked. (This is why the nominal `-> list[ReconciledValue]` signature is widened to `(values, notes)`: a skip must be visible.)
+
+**★ Filler change — `[SEMI-AUTO]` is now FILLABLE.** `analysis_layer/fillers/fill.py`: `SlotSpec` gains a `computed: bool` flag; one new slot `net_supply_change` (computed=True, keyword anchor `"supply change"`, unique to the Part 5.5 A "Net 7d / 30d supply change `[SEMI-AUTO: DefiLlama historical]`" line) accepts the three `net_supply_change_*` metrics. A `[SEMI-AUTO]` slot WITH a matching computed value flips to `[SEMI-AUTO ✓ COMPUTED]` + window sub-bullets (abs + pct + actual-days, e.g. "+$180.93M (+0.24%) · up · over 7d (actual 7.0d, …)"); a `[SEMI-AUTO]` slot with NO computed value (or any non-computed slot) still flags for a human exactly as before — so a plain `[SEMI-AUTO]` line can never be auto-filled from an unrelated `[AUTO]` metric. Evidence Table: `single_source → Medium` (unchanged mapping); the 3 net-change facts surface as their own rows.
+
+**★ Leg 1/3 of the KEY SIGNAL.** This supplies only the SUPPLY-DIRECTION number for Part 5.5's "Supply Momentum: organic vs mechanical" signal. The holder-count leg and real-usage leg are still pending; the CONFIRMATION/DIVERGENCE verdict is NOT auto-decided (the `☐ CONFIRMATION / ☐ DIVERGENCE` checkboxes are left untouched in the template).
+
+**Verified.** Unit tests (`tests/analysis_layer/test_supply_change.py`, synthetic series — no network): clean abs/pct/direction for 7d/30d/90d, short-history skip-with-note, non-contemporaneous gap recorded, rising/flat/falling direction (5bps dead-band), degenerate input → note not value. Real e2e (`tests/analysis_layer/test_filler.py::test_real_usdc_supply_change_fills_5_5_a`): real DefiLlama envelope → `compute_supply_change` CONCATENATED with `reconcile(inputs)` → `fill()` against the real v1.4 template (stablecoin, Mode A) → 5.5 A net-change line flips flagged → `[SEMI-AUTO ✓ COMPUTED]` with the right signs at Medium; rest of the report body byte-identical (Evidence Table legitimately gains the 3 rows). Output `meta/reports/usdc_b29_supply_change.md` (gitignored). Full suite: same 4 pre-existing failures, no new ones.
+
+**Out of scope (deferred):** the holder-count + real-usage legs (2/3, 3/3) and the KEY SIGNAL verdict logic; routing through `reconcile` if a 2nd historical-series source appears; momentum windows beyond 7/30/90d.
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.

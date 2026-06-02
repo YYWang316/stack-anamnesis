@@ -87,6 +87,12 @@ class SlotSpec:
     keywords: Tuple[str, ...]          # all must appear in the lowercased line
     metrics: Tuple[str, ...]           # metrics this slot accepts
     scope: str = _ANY_SCOPE            # exact scope, or _ANY_SCOPE
+    # When True this slot lives behind a [SEMI-AUTO] marker but is FILLABLE from a
+    # computed derivation (B.2.9): a matching value flips it to "[SEMI-AUTO ✓
+    # COMPUTED]" instead of flag-for-human. A [SEMI-AUTO] slot WITHOUT a matching
+    # value still flags as before. Only designed semi-fillable slots set this, so a
+    # plain [SEMI-AUTO] line can never be auto-filled from an [AUTO] metric.
+    computed: bool = False
 
     def matches_line(self, line_lower: str) -> bool:
         return all(k in line_lower for k in self.keywords)
@@ -98,6 +104,13 @@ class SlotSpec:
 
 
 SLOTS: Tuple[SlotSpec, ...] = (
+    # change-layer supply momentum (B.2.9, TD-035) — a [SEMI-AUTO] slot that becomes
+    # FILLABLE once the supply_change derivation computes a window. Anchored on the
+    # Part 5.5 A "Net 7d / 30d supply change" line ("supply change" is unique to it;
+    # "net flow" / "supply breakdown" lines do not contain it).
+    SlotSpec("net_supply_change", ("supply change",),
+             ("net_supply_change_7d", "net_supply_change_30d", "net_supply_change_90d"),
+             _ANY_SCOPE, computed=True),
     # explicit per-scope supply slots (for templates that split the two scopes)
     SlotSpec("supply_eth", ("supply", "ethereum"), ("total_supply",), "single-chain"),
     SlotSpec("supply_single", ("supply", "single-chain"), ("total_supply",), "single-chain"),
@@ -278,6 +291,83 @@ def _slot_subbullet(rv: ReconciledValue, subject_ref: Optional[SubjectRef]) -> s
             f"· confidence **{conf}** ({rv.agreement})")
 
 
+def _signed_usd(value: float) -> str:
+    """Signed USD magnitude — ``+$2.10B`` / ``-$1.30B`` (sign before the $)."""
+    scaled, suffix = _magnitude(value)
+    sign = "+" if value >= 0 else "-"
+    return f"{sign}${abs(scaled):,.2f}{suffix}"
+
+
+def _net_change_subbullet(rv: ReconciledValue) -> str:
+    """One filled sub-bullet for a computed net-supply-change window (B.2.9).
+
+    Renders abs + pct + the ACTUAL day-gap (honest about a "7d" computed over 6.4
+    real days), e.g.::
+
+        - **30d**: +$2.10B (+2.83%) · up · over 30d (actual 30.0d, 2026-04-28→2026-05-28) …
+    """
+    audit = rv.audit if isinstance(rv.audit, Mapping) else {}
+    conf, _ = _CONFIDENCE.get(rv.agreement, ("?", ""))
+    window = audit.get("window_days")
+    abs_change = audit.get("abs_change")
+    actual_days = audit.get("actual_days")
+    direction = audit.get("direction", "")
+    then_date = audit.get("then_date", "")
+    now_date = audit.get("now_date", "")
+    abs_part = _signed_usd(float(abs_change)) if isinstance(abs_change, (int, float)) else "—"
+    actual = f"{actual_days:.1f}d" if isinstance(actual_days, (int, float)) else "?"
+    return (
+        f"    - **{window}d**: {abs_part} ({float(rv.value):+.2f}%) · {direction} · "
+        f"over {window}d (actual {actual}, {then_date}→{now_date}) · source "
+        f"`{rv.source_used}` · confidence **{conf}** ({rv.agreement})"
+    )
+
+
+def _window_sort_key(rv: ReconciledValue) -> int:
+    """Sort computed windows ascending (7d before 30d before 90d)."""
+    audit = rv.audit if isinstance(rv.audit, Mapping) else {}
+    days = audit.get("window_days")
+    return days if isinstance(days, int) else 9999
+
+
+def _fill_semi_auto_line(
+    line: str,
+    marker_text: str,
+    body: str,
+    by_key: "Dict[Tuple[str, Optional[str]], ReconciledValue]",
+    placed: "set[Tuple[str, Optional[str]]]",
+) -> List[str]:
+    """A [SEMI-AUTO] slot: FILL it when it is a designed computed slot WITH a matching
+    value (B.2.9), otherwise flag it for a human exactly as before.
+
+    Only a slot flagged ``computed`` can be auto-filled here — a plain [SEMI-AUTO]
+    line (DEX pool liquidity, attestation cadence, …) always stays flagged, never
+    fabricated from an unrelated [AUTO] metric.
+    """
+    spec = _match_slot(line.lower())
+    if spec is None or not spec.computed:
+        return [_semi_flag(line, body)]
+
+    facts = [rv for key, rv in by_key.items()
+             if key not in placed and spec.accepts(rv)]
+    if not facts:
+        # designed-fillable, but nothing was computed this run -> flag as before.
+        return [_semi_flag(line, body)]
+    facts.sort(key=_window_sort_key)
+
+    for rv in facts:
+        placed.add((rv.metric, rv.scope))
+    filled_marker = f"[SEMI-AUTO ✓ COMPUTED: {body}]"
+    out = [line.replace(marker_text, filled_marker)]
+    out.extend(_net_change_subbullet(rv) for rv in facts)
+    return out
+
+
+def _semi_flag(line: str, body: str) -> str:
+    return (f"{line}  → ⚠ **NEEDS HUMAN REVIEW [SEMI-AUTO]** — compute / verify "
+            f"manually before publish: {body}")
+
+
 def _fill_auto_line(
     line: str,
     marker_text: str,
@@ -326,8 +416,7 @@ def _process_line(
     if kind == "AUTO":
         return _fill_auto_line(line, m.group(0), body, by_key, placed, subject_ref)
     if kind == "SEMI-AUTO":
-        return [f"{line}  → ⚠ **NEEDS HUMAN REVIEW [SEMI-AUTO]** — compute / verify "
-                f"manually before publish: {body}"]
+        return _fill_semi_auto_line(line, m.group(0), body, by_key, placed)
     # MANUAL
     return [f"{line}  → ⚠ **MANUAL** — researcher must fill: {body}"]
 
