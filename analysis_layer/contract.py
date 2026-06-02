@@ -146,3 +146,59 @@ class MetricAuthority:
     primary: str
     scope: Optional[str] = None
     cross_checks: Tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ReconciledValue:
+    """One reconciled fact + its credibility signal — the aggregator's output.
+
+    The aggregator (analysis_layer/aggregators/reconcile.py) turns a pile of
+    same-fact ``ExtractedValue``s into this. The cardinal rule it encodes: the
+    reported ``value`` is ALWAYS a real source's actual number (the authority's,
+    via ``source_authority``) — never a blend or average. Cross-source agreement
+    is recorded in ``audit``/``agreement`` as a CONFIDENCE SIGNAL, never used to
+    synthesize a number. On divergence the value still stays the authority's
+    number; it is flagged, not dropped or averaged.
+
+    This is what the B.2.8 filler consumes to fill the markdown template.
+
+    Pure data contract — frozen dataclass, no behaviour.
+
+    Attributes
+    ----------
+    metric / scope:
+        The group key. ``scope`` matches the extractors' ``provenance["scope"]``
+        (``"single-chain"`` / ``"multi_chain"`` / ``None``). A single-chain
+        on-chain supply and a multi-chain aggregate supply are DIFFERENT facts —
+        two ReconciledValues, never reconciled across scopes.
+    value / unit:
+        The authoritative source's actual number and its unit. Not an average.
+    source_used:
+        Slug of the source the ``value`` came from — the metric's ``primary``
+        when present, else the highest-authority available fallback
+        (``audit["fallback"]`` records whether a fallback occurred).
+    as_of:
+        The chosen value's own ``as_of`` timestamp.
+    agreement:
+        ``"agree"`` (every available cross-check within band), ``"divergence"``
+        (some cross-check outside band — value still kept), or
+        ``"single_source"`` (no cross-check was available).
+    inputs:
+        Every ``ExtractedValue`` in the group, kept for the record.
+    audit:
+        The credibility trail — per cross-check: source, relative ``delta``,
+        the ``band`` applied (widened by the ``as_of`` gap for single-chain),
+        ``within_band``, ``contemporaneous`` + gap, and a note; PLUS the group
+        ``spread`` (max−min, relative) and ``median`` across available values.
+        ``delta``/``band``/``spread`` are RELATIVE FRACTIONS (``0.0026`` == 0.26%).
+    """
+
+    metric: str
+    value: Value
+    unit: str
+    source_used: str
+    scope: Optional[str] = None
+    as_of: Optional[str] = None
+    agreement: str = "single_source"
+    inputs: Tuple[ExtractedValue, ...] = ()
+    audit: Mapping[str, Any] = field(default_factory=dict)

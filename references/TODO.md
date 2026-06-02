@@ -641,6 +641,28 @@ Per-metric table (scope noted):
 
 ---
 
+## TD-032 — aggregator (reconciliation / credibility layer) built; B.2.8 filler is the consumer
+
+**Status:** active 2026-06-01 (built in B.2.7 — third stage of the analysis-layer trunk: extractor → resolver → aggregator → filler; consumes both resolvers, TD-030/TD-031).
+
+**What was built.** `analysis_layer/aggregators/reconcile.py` with a pure `reconcile(values: list[ExtractedValue]) -> list[ReconciledValue]`, and a `ReconciledValue` frozen dataclass added to `analysis_layer/contract.py` (the shape the B.2.8 filler will consume). Four steps: (1) group by `(metric, scope)`; (2) pick the authority's value via `source_authority.authority_for(metric, scope)`, falling back down the cross-check order when the primary emitted nothing; (3) cross-check every other available source against the chosen value vs a scope-aware band; (4) label `agree` / `divergence` / `single_source`.
+
+**★ Authority, NOT average (cardinal rule).** The reported `value` is ALWAYS a real source's actual number — never a blend/mean. Cross-source agreement is recorded only as a confidence signal (`agreement` + `audit`: per-cross-check delta/band/within, plus group `spread` = (max−min)/median and `median`). The median is RECORDED, never used as the value. On divergence the value still stays the authority's number — flagged, not dropped, not averaged.
+
+**Scope never crossed.** `(metric, scope)` grouping keeps single-chain on-chain supply (~$52.6B Ethereum-only, value from Alchemy) and the multi-chain aggregate (~$76.4B, value from CoinGecko) as TWO separate `ReconciledValue`s. Bands are by metric **category**, not the raw scope tag: supply gets the tight single-chain / 0.2% multi-chain bands, while price/market_cap/volume use the ±0.5% general-currency band even though the CoinGecko/CMC extractors tag them `multi_chain` (the 0.2% band is for supply totals, not prices).
+
+**★ as_of-gap drift rule + `DRIFT_RATE_PER_DAY`.** Single-chain on-chain reads reconcile at a tight ~0.05% band ONLY when contemporaneous (as_of within `CONTEMPORANEOUS_WINDOW_SEC` = 1h). Beyond that the band is widened to `BAND_SINGLE_CHAIN_SUPPLY + gap_days × DRIFT_RATE_PER_DAY`. `DRIFT_RATE_PER_DAY = 0.0015` (0.15%/day) is a documented, tunable module constant derived from the two real on-chain USDC envelopes (~0.26% over ~1.86 days ≈ 0.14%/day), set slightly above the observed rate so normal mint/burn drift reads as **agree**, not a false divergence. On the real envelopes the Alchemy-vs-Etherscan 0.261% delta over a 1.86d gap widens the band to ~0.329% → agree.
+
+**Scope inference for Alchemy.** The Alchemy `total_supply` extractor emits no `provenance["scope"]`; rather than hardcode a source→scope map or touch the extractor, `reconcile` infers a missing scope from `source_authority` (the scope whose authority ranking names that source for that metric) — so Alchemy groups with Etherscan in `single-chain`. Stays correct if Alchemy later adds the tag (its tag would then win).
+
+**Out of scope (deferred):** markdown rendering / template filling (B.2.8 filler — the consumer of `ReconciledValue`); web third-source + red-team checks (B.3); any averaging/blending. `reconcile` takes already-extracted values and does NOT import the extractors.
+
+**To advance:**
+1. Build the B.2.8 filler that consumes `ReconciledValue` (value + `agreement`/`audit` confidence signal) into the markdown template.
+2. Tune `DRIFT_RATE_PER_DAY` / the bands if real runs surface false flags.
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.
