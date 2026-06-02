@@ -728,6 +728,26 @@ Per-metric table (scope noted):
 
 ---
 
+## TD-036 — analysis orchestrator (the pipeline FRONT DOOR); half 1 of 2 (analysis), fetch front deferred to B.2.11
+
+**Status:** active 2026-06-02 (built in B.2.10 — a NEW module `analysis_layer/orchestrate.py`, the entry point over the existing trunk: resolve → load envelopes → extract → reconcile → derive → fill → write).
+
+**What was built.** `research(subject, *, subject_type=None, mode="subject_driven", template_path=<v1.4>, raw_dir="meta/raw", out_dir="meta/reports") -> Path` — PURE (no network, no env-key reads): resolves the subject_ref (clear `ValueError` if not in the registry), loads the NEWEST envelope per source, runs each source's extractor, `reconcile()`s, runs the supply-change derivation, module-aware `fill()`s, and writes `meta/reports/<slug>_<utc>.md`. Reusable building blocks exposed for the fetch front + tests: `load_and_extract(subject, raw_dir) -> list[ExtractedValue]`, `build_report(...)` (everything but the write), `SOURCE_EXTRACTORS` (the source→adapter map). Thin CLI: `python -m analysis_layer.orchestrate <subject> [--subject-type X] [--mode ...] [--template ...]` prints the report path + a one-line summary (subject, subject_type, sources loaded/skipped, reconciled facts, filled slots, derivations, skipped-window notes).
+
+**★ Centralises the hand-wiring the tests duplicated.** Until now the full chain only existed inside `tests/analysis_layer/test_filler.py`'s `_build_usdc_reconciled` + the e2e tests. The orchestrator is that wiring, in one place. (DRY note for later: those test helpers COULD eventually call the orchestrator instead of re-deriving the chain — deferred to avoid touching the existing tests in this step.)
+
+**★ Wires ALL SIX extractors incl. `sec_edgar`** — the hand-wired tests omitted it. The orchestrator pulls a fixed `_SEC_FACTS` set (Revenues FY2024, Assets/Liabilities FY2025, NetIncomeLoss/StockholdersEquity FY2024 — each grounded to a `frame` present in Circle's real envelope, TD-023) via `get_xbrl_value`; no `[AUTO]` slot maps to them so they land in the Evidence Table, surfacing the issuer's regulated financials (real numbers: Assets $78.7B, Revenues $1.68B, NetIncome $155.7M) alongside the on-chain metrics — a more complete report than the filler e2e makes.
+
+**★ Best-effort missing-source tolerance.** A source with no envelope on disk (e.g. a DefiLlama fetch that failed that run) is simply SKIPPED — the report still builds and that section stays flagged exactly as the filler already handles. On-chain dirs (Alchemy/Etherscan) glob `*.json` and rely on the extractor to skip non-matching envelopes (mirrors the tests' `_first`); aggregator sources glob `<slug>_*.json`; SEC globs `*cik<cik>*.json`. Malformed/unreadable JSON is skipped, never crashes the build.
+
+**★ Deterministic.** Given fixed envelopes the report CONTENT is byte-identical across runs (fixed source order + fixed SEC-fact order; no timestamp injected into the markdown — only the output FILENAME's UTC stamp differs).
+
+**Verified.** `tests/analysis_layer/test_orchestrate.py` (5 tests, glob+skip if envelopes absent): real e2e `research("USDC")` → same clean stablecoin report the filler e2e proves (chain/DeFi modules + News Hook omitted, Part 5.5 + Path C kept, supply `[AUTO]` filled, 5.5 A net-change `[SEMI-AUTO ✓ COMPUTED]`, Evidence Table + faithfulness flags intact) AND now the sec_edgar Circle facts in the table; the source→extractor map names all 6; unresolvable subject → clear `ValueError`; determinism (two runs → byte-identical content); `load_and_extract` reaches all present sources incl. sec_edgar. CLI prints path + summary (6 sources loaded, 15 reconciled facts, derivation run). Full suite: same 4 pre-existing failures, no new ones.
+
+**Out of scope (deferred to B.2.11 — the FETCH front, half 2 of 2):** running the B.1 fetchers to REFRESH the envelopes (network/keys/rate-limits) BEFORE calling `research()`. The DRY refactor (the test helpers calling the orchestrator). Multi-subject registry (only USDC is bound today).
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.
