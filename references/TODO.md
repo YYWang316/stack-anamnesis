@@ -803,6 +803,33 @@ Per-metric table (scope noted):
 
 ---
 
+## TD-040 — markdown→HTML renderer (B.4); status/confidence badges; optional `--html`
+
+**Status:** active 2026-06-02 (built in B.4 — a NEW pure module `analysis_layer/render/html.py` + `analysis_layer/render/__init__.py`, and an opt-in `html=` flag on the orchestrator).
+
+> **★ Numbering note (flagged, deliberate deviation from the B.4 mandate).** The B.4 prompt said to capture this as "TD-039 (next free; fetch front was TD-038)". By the time B.4 ran, **TD-039 was already taken** — the repo-cleanup pass (README rewrite + parked inherited tests) had claimed it (and was committed as `a850b5f`). The genuinely-next-free id is **TD-040**, used here, to avoid a colliding duplicate. (Pattern: substance over a stale literal — surface the conflict, take the correct next id.)
+
+**What was built.** `render_html(markdown_text, *, title=None) -> str` — converts a crypto research report (markdown) into ONE self-contained HTML file: inline `<style>` only, **no external `<link>` / `<script src>`** — fully portable. A focused converter for the constrained markdown the template emits (ATX headers → `h1`–`h6`; GFM pipe tables → styled `<table>`; `-`/`*` lists with 4-space nesting → nested `<ul>`; `>` → `<blockquote>`; `---` → `<hr>`; `**bold**` / `*italic*` / `` `code` `` inline). NOT a general markdown engine; NOT coupled to the inherited equity locked-template / `validate_report_html` machinery (a deliberately separate crypto renderer). PURE + deterministic — same markdown in → byte-identical HTML out (no clock, no network).
+
+**★ The value-add over raw markdown — status becomes scannable.** Each marker the filler emits is turned into a coloured badge/chip so a reader sees data provenance at a glance:
+- `[AUTO ✓ FILLED: …]` / `[SEMI-AUTO ✓ COMPUTED: …]` → green "machine-filled" badge;
+- `⚠ NEEDS HUMAN REVIEW [SEMI-AUTO]` / `⚠ MANUAL` / `[MANUAL: …]` → amber "needs-human" badge;
+- `⚠ UNFILLED [AUTO]` → amber (flagged, NOT fabricated);
+- `[AUTO: …]` / `[SEMI-AUTO: …]` planned-but-unfilled tags → neutral grey badge;
+- confidence `High` / `Medium` / `Low` → green / amber / grey chips (in running text *and* in the Evidence Table's Confidence column).
+
+A small legend at the top of the document keys the colours.
+
+**Orchestrator wiring.** `research(..., html=False)` / `_run(..., html=False)` and a `--html` CLI flag. Default stays `html=False`; the markdown remains the canonical artifact and the returned path is still the `.md`. When `True`, a self-contained `meta/reports/<slug>_<utc>.html` is written next to the `.md` (same stem). The renderer is imported lazily inside the `html` branch.
+
+**Verified.** `tests/analysis_layer/test_render_html.py` (15 tests, no network): a synthetic report carrying every marker + an Evidence Table renders the table as `<table>`, headers as `<h*>`, each status marker as its badge, confidence chips present, output self-contained (no `http(s)://` / `<link` / `src=`), deterministic, title from first `# ` or override; plus an e2e (`research("USDC", html=True)` over on-disk envelopes writes BOTH `.md` and a valid `.html`; globs + skips if envelopes absent). Live CLI: `python -m analysis_layer.orchestrate USDC --html` → both files written, badges/table/chips render, zero external resources.
+
+**No new dependency.** `markdown`/`bs4` were considered but the converter is stdlib-only (`re`), so `requirements.txt` is untouched — keeps the renderer pure and install-free.
+
+**Still ahead:** **B.5** — the 6-card social pack (YYFoundry brand visuals; the inherited `ep`/photo pipeline is parked, see TD-039); **B.6** — SQLite crypto schema (cross-report query + incremental). B.4 is the markdown→HTML leg only; HTML→PNG cards and DB persistence remain.
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.

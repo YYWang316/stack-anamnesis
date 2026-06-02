@@ -227,6 +227,7 @@ class ResearchResult:
     derivations: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
     fetch_notes: List[str] = field(default_factory=list)
+    html_path: Optional[Path] = None
 
 
 def _resolve_or_raise(subject: str) -> SubjectRef:
@@ -312,12 +313,15 @@ def _run(
     out_dir: "str | Path" = DEFAULT_OUT_DIR,
     fetch: bool = False,
     freshness_window: str = "30d",
+    html: bool = False,
 ) -> ResearchResult:
     """Build the report, WRITE it, and return the full result (path + summary).
 
     When ``fetch`` is True, the IMPURE fetch front runs FIRST (refreshing the
     on-disk envelopes via the B.1 fetchers) — best-effort, never crashing the
-    run — then the existing pure analysis runs over whatever landed."""
+    run — then the existing pure analysis runs over whatever landed. When
+    ``html`` is True, a self-contained HTML rendering is ALSO written next to the
+    ``.md`` (same stem) — the markdown stays the canonical artifact."""
     fetch_notes: List[str] = []
     if fetch:
         # imported lazily so the pure analysis path never pulls the network module
@@ -337,6 +341,13 @@ def _run(
     path = out / f"{sref.subject.lower()}_{stamp}.md"
     path.write_text(markdown, encoding="utf-8")
 
+    html_path: Optional[Path] = None
+    if html:
+        # pure stdlib renderer; import here so the module is only pulled when asked
+        from analysis_layer.render.html import render_html
+        html_path = path.with_suffix(".html")
+        html_path.write_text(render_html(markdown), encoding="utf-8")
+
     filled = markdown.count("[AUTO ✓ FILLED") + markdown.count("[SEMI-AUTO ✓ COMPUTED")
     derivations = (
         ["supply_change (net 7d/30d/90d)"]
@@ -347,6 +358,7 @@ def _run(
         subject_type=sref.subject_type, sources_loaded=sources_loaded,
         reconciled_count=len(reconciled), filled_slots=filled,
         derivations=derivations, notes=notes, fetch_notes=fetch_notes,
+        html_path=html_path,
     )
 
 
@@ -360,21 +372,24 @@ def research(
     out_dir: "str | Path" = DEFAULT_OUT_DIR,
     fetch: bool = False,
     freshness_window: str = "30d",
+    html: bool = False,
 ) -> Path:
-    """Regenerate ``subject``'s research report. Returns the written report's path.
+    """Regenerate ``subject``'s research report. Returns the written ``.md`` path.
 
     Default (``fetch=False``) is PURE — no network, no env-key reads: resolve →
     load newest envelope per source → extract (all 6 incl. SEC) → reconcile →
     supply-change derivation → module-aware fill → write. With ``fetch=True`` the
     IMPURE fetch front (``analysis_layer.fetch_front``) runs FIRST to refresh the
     envelopes (best-effort — a failed fetcher is noted and skipped, never
-    crashes), giving a full zero→report run. Raises ``ValueError`` if the subject
-    is not in the registry.
+    crashes), giving a full zero→report run. With ``html=True`` a self-contained
+    HTML rendering is ALSO written next to the ``.md`` (same stem); the returned
+    path is still the markdown. Raises ``ValueError`` if the subject is not in the
+    registry.
     """
     return _run(
         subject, subject_type=subject_type, mode=mode,
         template_path=template_path, raw_dir=raw_dir, out_dir=out_dir,
-        fetch=fetch, freshness_window=freshness_window,
+        fetch=fetch, freshness_window=freshness_window, html=html,
     ).path
 
 
@@ -401,13 +416,16 @@ def main(argv: Optional[List[str]] = None) -> int:
                              "first (best-effort), then analyse (zero→report)")
     parser.add_argument("--window", default="30d",
                         help="freshness window passed to the fetchers (--fetch only)")
+    parser.add_argument("--html", action="store_true",
+                        help="also write a self-contained HTML rendering next to "
+                             "the .md (status/confidence badges)")
     args = parser.parse_args(argv)
 
     try:
         result = _run(
             args.subject, subject_type=args.subject_type, mode=args.mode,
             template_path=args.template, raw_dir=args.raw_dir, out_dir=args.out_dir,
-            fetch=args.fetch, freshness_window=args.window,
+            fetch=args.fetch, freshness_window=args.window, html=args.html,
         )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -422,6 +440,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         for note in result.fetch_notes:
             print(f"  - {note}")
     print(f"report written to: {printed_path}")
+    if result.html_path is not None:
+        try:
+            printed_html = result.html_path.relative_to(ROOT)
+        except ValueError:
+            printed_html = result.html_path
+        print(f"html written to:   {printed_html}")
     skipped = [s for s in SOURCE_EXTRACTORS if s not in result.sources_loaded]
     summary = (
         f"subject={result.subject} · subject_type={result.subject_type} · "
