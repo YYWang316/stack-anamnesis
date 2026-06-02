@@ -686,6 +686,28 @@ Per-metric table (scope noted):
 
 ---
 
+## TD-034 — module-aware section selection (filler renders only the sections that apply)
+
+**Status:** active 2026-06-02 (built in B.2.8b — extends the B.2.8 filler, TD-033). The filler now turns the unified v1.4 master SOP into a CLEAN per-subject report instead of the full template with irrelevant sections flagged empty.
+
+**What was built.** A pure `select_sections(template_text, subject_type, mode="subject_driven") -> (kept_text, info)` pass in `analysis_layer/fillers/fill.py`, run by `fill()` (new `mode` arg) FIRST whenever a `SubjectRef` is supplied. It splits the template into header-delimited sections (a section spans its header down to the next header of the same-or-higher level, so omitting a Part drops its sub-sections too) and keeps only those that apply; the existing `[AUTO]` slot-filling / Evidence Table / `[SEMI-AUTO]`/`[MANUAL]` flagging then runs on the KEPT sections only. Omitted sections vanish ENTIRELY (header + body) — they are NOT flagged-empty.
+
+**★ Two INDEPENDENT tag axes (do not conflate).**
+1. **SUBJECT-TYPE axis** — only on the type-specific modules: Part 5.1 `[Chain / L2 / DeFi]`, 5.2 `[Chain / L2]`, 5.3 `[Payment chain]`, 5.4 `[DeFi]`, 5.5 `[Stablecoin]`, Part 4.3 `[Crypto-native asset / token-bearing protocol]`, and Part 8 valuation Paths A (crypto-native) / B ("no token exists" infra) / C (stablecoin). A section carrying a subject-type tag is kept only when the run's `subject_type` is among the types it names. A section may name SEVERAL types (the **stackable / hybrid** case, e.g. a payment chain that issues its own stablecoin keeps 5.1+5.2+5.3+5.5) — designed for, even though USDC is single-type.
+2. **MODE axis** — `[Both]` / `[Mode A …]` / `[Mode B …]`. **★ `[Both]` means both MODES (A subject-driven, B news-driven), NOT both subject types** — a `[Both]` (or untagged) section is subject-type-AGNOSTIC and is always kept, subject only to the mode filter. In Mode A (default `subject_driven`) the `[Mode B only]` sections (e.g. Part 2 News Hook) are dropped; a dual-mode tag (`[Mode A primary; Mode B …]`, `[Mode B emphasis; Mode A optional]`) is kept in both.
+
+**Matching details.** subject_type values match `SubjectRef.subject_type` (`stablecoin` / `chain` / `l1` / `l2` / `defi_protocol` / `payment_chain` / `crypto_native_asset`). Subject tokens are matched LONGEST-FIRST and consumed, so "payment chain" never also counts as the generic "chain"; and subject-token detection is restricted to the `[...]` / `（...）` delimited tag groups so a plain title word ("On-**Chain** Metrics", "**Stablecoin** valuation") cannot trip a match. Part 8 Path B is caught by the literal "no token" phrase → no-token infra (`payment_chain`), so it omits for a stablecoin while Path C (untagged title) is kept agnostically.
+
+**FAIL-SAFE.** An unknown/unmapped `subject_type` (or `None`) keeps EVERYTHING and records a note (`info["failsafe"]`, surfaced as an `[AUTO module-aware]` blockquote after Part 0) — the selector never silently drops a section it cannot reason about.
+
+**★ Reality check (TD-023).** The B.2.8b prompt referenced `references/templates/stablecoin_research_template.md` (v1.4); no such file exists. The real unified template is `references/templates/crypto_research_v1.3.md` — its content header is "Research SOP **v1.4**" with exactly the Part 5.1–5.5 modules + Path A/B/C described. Used that file; the e2e test points `TEMPLATE_V14` at it.
+
+**Verified.** Real USDC e2e (`test_real_usdc_module_aware_fill`): on-disk envelopes → pure extractors → reconcile() → fill() against the real v1.4 template, subject_type=stablecoin, mode A → OMITS Part 2 + 5.1/5.2/5.3/5.4 + 4.3 + Path A/B; KEEPS Part 5.5 + the `[Both]` sections (thesis, competitive, conclusion) + Path C; still fills the stablecoin supply `[AUTO]` slots (both scopes as distinct sub-bullets) and flags the rest. Output written to `meta/reports/usdc_b28b_module_aware.md` (gitignored). Full suite: same 4 pre-existing failures, no new ones.
+
+**Out of scope (deferred):** INTRA-section subject-type branch selection (Part 4.2's inline "For chain / For DeFi / For Stablecoin" bullets are kept whole — the section header is untagged/agnostic, so branch-level pruning inside a kept section is a future refinement); dropping the non-deliverable YYFoundry Workshop block; a chain/l1 subject currently matches none of Path A/B/C (template's own valuation-path design gap — chains-with-token should resolve as `crypto_native_asset`).
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.

@@ -373,14 +373,170 @@ def _apply_header_context(
 
 
 # --------------------------------------------------------------------------- #
+# module-aware section selection (B.2.8b)
+# --------------------------------------------------------------------------- #
+# The v1.4 template is ONE unified SOP spanning every subject type. TWO
+# INDEPENDENT tag axes live in the section headers (inside `[...]` / `（...）`):
+#
+#   SUBJECT-TYPE axis — only on the type-specific modules: Part 5.1 [Chain / L2 /
+#     DeFi], 5.2 [Chain / L2], 5.3 [Payment chain], 5.4 [DeFi], 5.5 [Stablecoin],
+#     Part 4.3 [Crypto-native asset / token-bearing protocol], and Part 8's
+#     valuation paths (Path A crypto-native, Path B "no token exists" infra,
+#     Path C stablecoin). A section carrying a subject-type tag is KEPT only when
+#     the run's ``subject_type`` is among the types it names — a section may name
+#     SEVERAL (the stackable/hybrid case, e.g. [Chain / L2 / DeFi]).
+#
+#   MODE axis — [Both] / [Mode A …] / [Mode B …]. ★ [Both] here means both MODES
+#     (A subject-driven, B news-driven), NOT both subject types: a [Both] (or
+#     untagged) section is subject-type-AGNOSTIC and is always kept, subject only
+#     to the mode filter.
+#
+# ``subject_type`` values match ``SubjectRef.subject_type``. Subject tokens are
+# matched LONGEST-FIRST and consumed, so "payment chain" never also counts as the
+# generic "chain"; and detection is restricted to the `[...]`/`（...）` tag groups
+# so a plain title word ("On-Chain Metrics", "Stablecoin valuation") cannot
+# trip a match.
+_TYPE_TOKENS: Tuple[Tuple[str, "frozenset[str]"], ...] = (
+    ("token-bearing protocol", frozenset({"defi_protocol", "crypto_native_asset"})),
+    ("crypto-native asset",     frozenset({"crypto_native_asset"})),
+    ("payment chain",           frozenset({"payment_chain"})),
+    ("defi protocol",           frozenset({"defi_protocol"})),
+    ("stablecoin",              frozenset({"stablecoin"})),
+    ("rollup",                  frozenset({"l2"})),
+    ("payment",                 frozenset({"payment_chain"})),
+    ("defi",                    frozenset({"defi_protocol"})),
+    ("chain",                   frozenset({"chain", "l1"})),
+    ("l2",                      frozenset({"l2"})),
+)
+
+# Every subject_type the selector knows how to place. An unknown/unmapped type
+# (or ``None``) trips the FAIL-SAFE — keep everything — rather than silently
+# dropping a section it cannot reason about.
+_KNOWN_SUBJECT_TYPES: "frozenset[str]" = frozenset(
+    t for _tok, types in _TYPE_TOKENS for t in types
+)
+
+_HEADER_RE = re.compile(r"^(#{1,6})\s+(.*)$")
+# A header's delimited tag groups: `[...]` (ASCII) and `（...）` (full-width). The
+# CJK 【...】 brackets are deliberately NOT matched (they carry prose, not tags).
+_TAG_GROUP_RE = re.compile(r"\[([^\]]*)\]|（([^）]*)）")
+
+
+def _subject_types_in_tag(tag_text: str) -> "frozenset[str]":
+    """The subject types a tag string names (possibly several — the stackable
+    hybrid case). Empty when the tag carries no subject-type token."""
+    text = tag_text.lower()
+    matched: "set[str]" = set()
+    for token, types in _TYPE_TOKENS:
+        if token in text:
+            matched |= types
+            text = text.replace(token, " ")   # consume so "chain" ⊄ "payment chain"
+    return frozenset(matched)
+
+
+def _header_subject_types(header: str) -> "frozenset[str]":
+    """Subject types named in a header's delimited tags, plus the valuation-path
+    "no token exists" branch (Part 8 Path B → no-token infra). Empty ⇒ the header
+    is subject-type-agnostic (kept regardless of subject_type)."""
+    matched: "set[str]" = set()
+    for m in _TAG_GROUP_RE.finditer(header):
+        matched |= _subject_types_in_tag(m.group(1) or m.group(2) or "")
+    if "no token" in header.lower():          # Part 8 Path B — infra w/o a token
+        matched |= {"payment_chain"}
+    return frozenset(matched)
+
+
+def _header_mode_excluded(header: str, mode: str) -> bool:
+    """True when a header's MODE tag excludes it from the active ``mode``.
+
+    Mode A == ``"subject_driven"``, Mode B == ``"news_driven"``. A [Both] / dual
+    (names both modes) / untagged header is never excluded — only a single-mode
+    EXCLUSIVE one is (e.g. Part 2 News Hook is [Mode B only] → dropped in Mode A).
+    """
+    low = header.lower()
+    has_a, has_b = "mode a" in low, "mode b" in low
+    if "both" in low or (has_a and has_b) or (not has_a and not has_b):
+        return False
+    if mode == "subject_driven":              # Mode A — drop Mode-B-only sections
+        return has_b and not has_a
+    return has_a and not has_b                # Mode B — drop Mode-A-only sections
+
+
+def select_sections(
+    template_text: str,
+    subject_type: Optional[str],
+    mode: str = "subject_driven",
+) -> "Tuple[str, Dict[str, object]]":
+    """Module-aware section selection (B.2.8b) — turn the unified v1.4 SOP into a
+    clean per-subject report. PURE and deterministic.
+
+    Splits the template into header-delimited sections (a section spans its header
+    down to the next header of the SAME-OR-HIGHER level — so omitting a Part drops
+    its sub-sections too) and KEEPS only those that apply:
+      * a section carrying a SUBJECT-TYPE tag is kept only when ``subject_type`` is
+        among the types it names;
+      * a subject-type-AGNOSTIC section ([Both] / untagged) is kept, subject only
+        to the MODE filter.
+    Omitted sections vanish ENTIRELY (header AND body) — they are NOT flagged-empty.
+
+    FAIL-SAFE: an unknown/unmapped ``subject_type`` (or ``None``) keeps EVERYTHING
+    and records a note — never a silent drop.
+
+    Returns ``(kept_text, info)`` with ``info`` = ``{kept, omitted, failsafe}``
+    (``kept``/``omitted`` are header strings; ``failsafe`` is a note or ``None``).
+    """
+    if subject_type not in _KNOWN_SUBJECT_TYPES:
+        note = (f"subject_type {subject_type!r} is not a mapped module type — "
+                f"ALL sections kept (module-aware selection skipped; nothing dropped)")
+        return template_text, {"kept": [], "omitted": [], "failsafe": note}
+
+    out: List[str] = []
+    kept: List[str] = []
+    omitted: List[str] = []
+    skip_level: Optional[int] = None          # currently dropping a section at this level
+
+    for line in template_text.split("\n"):
+        m = _HEADER_RE.match(line)
+        level = len(m.group(1)) if m else None
+
+        if skip_level is not None:
+            if level is not None and level <= skip_level:
+                skip_level = None             # this header re-enters normal evaluation
+            else:
+                continue                      # still inside the dropped section
+
+        if m is not None:
+            types = _header_subject_types(line)
+            omit = (bool(types) and subject_type not in types) \
+                or _header_mode_excluded(line, mode)
+            if omit:
+                skip_level = level
+                omitted.append(line.strip())
+                continue
+            kept.append(line.strip())
+
+        out.append(line)
+
+    return "\n".join(out), {"kept": kept, "omitted": omitted, "failsafe": None}
+
+
+# --------------------------------------------------------------------------- #
 # public API
 # --------------------------------------------------------------------------- #
 def fill(
     template_text: str,
     reconciled: List[ReconciledValue],
     subject_ref: Optional[SubjectRef] = None,
+    mode: str = "subject_driven",
 ) -> str:
     """Fill a research-template string from reconciled values. PURE — no I/O.
+
+    When a ``subject_ref`` is supplied, a MODULE-AWARE section-selection pass
+    (B.2.8b — ``select_sections``) runs FIRST, keyed on ``subject_ref.subject_type``
+    and ``mode`` (``"subject_driven"`` = Mode A, ``"news_driven"`` = Mode B): only
+    the template sections that apply to the subject + mode survive; the rest are
+    omitted entirely (gone, NOT flagged-empty). The existing ``[AUTO]`` slot-filling
+    then runs on the KEPT sections only.
 
     Returns the filled markdown:
       * each ``[AUTO]`` slot it can map (by keyword -> metric/scope) gets the
@@ -393,7 +549,8 @@ def fill(
       * a data-layer Evidence Table (one row per reconciled fact, full precision)
         is appended — including any reconciled value that found no slot.
 
-    See the module docstring for the faithfulness and scope/unit rules.
+    See the module docstring for the faithfulness and scope/unit rules, and
+    ``select_sections`` for the section-selection axes and fail-safe.
     """
     rvs = [rv for rv in reconciled if isinstance(rv, ReconciledValue)]
     by_key: "Dict[Tuple[str, Optional[str]], ReconciledValue]" = {}
@@ -403,15 +560,31 @@ def fill(
     placed: "set[Tuple[str, Optional[str]]]" = set()
     data_date = _latest_as_of(rvs)
 
+    # MODULE-AWARE pass first: keep only the sections that apply to this subject +
+    # mode, so the [AUTO] slot-filling below runs on the kept sections only.
+    selection_note: Optional[str] = None
+    if subject_ref is not None:
+        template_text, info = select_sections(template_text, subject_ref.subject_type, mode)
+        selection_note = info["failsafe"]      # type: ignore[assignment]
+
     out: List[str] = []
     for line in template_text.split("\n"):
         if subject_ref is not None:
             line = _apply_header_context(line, subject_ref, data_date)
         out.extend(_process_line(line, by_key, placed, subject_ref))
-        # inject the subject_ref context block right after the Part 0 heading
+        # inject the subject_ref context block + module-aware note after Part 0
         if subject_ref is not None and line.startswith("## Part 0"):
             out.append("")
             out.append(_subject_ref_block(subject_ref))
+            out.append("")
+            if selection_note:
+                out.append(f"> **[AUTO module-aware]** ⚠ {selection_note}")
+            else:
+                out.append(
+                    f"> **[AUTO module-aware]** rendered for subject_type "
+                    f"`{subject_ref.subject_type}` · mode `{mode}` — template sections "
+                    f"that do not apply to this subject/mode are omitted (not flagged)."
+                )
 
     out.append(build_evidence_table(rvs, placed))
     return "\n".join(out)

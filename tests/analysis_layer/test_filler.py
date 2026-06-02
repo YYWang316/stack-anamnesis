@@ -24,11 +24,17 @@ from pathlib import Path
 import pytest
 
 from analysis_layer.contract import ExtractedValue, ReconciledValue, SubjectRef
-from analysis_layer.fillers.fill import build_evidence_table, fill, render_value
+from analysis_layer.fillers.fill import (
+    build_evidence_table, fill, render_value, select_sections,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 RAW = ROOT / "meta" / "raw"
 TEMPLATE = ROOT / "references" / "templates" / "crypto_research_v1.2.md"
+# The on-disk file is named v1.3 but its content header is "Research SOP v1.4" —
+# the unified master template with the Part 5.1–5.5 subject-type modules and the
+# Part 8 valuation Paths A/B/C the module-aware pass selects against.
+TEMPLATE_V14 = ROOT / "references" / "templates" / "crypto_research_v1.3.md"
 OUT_DIR = ROOT / "meta" / "reports"
 
 
@@ -196,6 +202,86 @@ def test_render_value_human_readable():
 
 
 # --------------------------------------------------------------------------- #
+# module-aware section selection (B.2.8b)
+# --------------------------------------------------------------------------- #
+# An inline unified template: a [Both] section (subject-agnostic), a [Mode B
+# only] section (dropped in Mode A), a [Chain] module and a [Stablecoin] module
+# (subject-type-exclusive, exactly one survives per subject).
+MODULE_TEMPLATE = """## Part 0 — Meta `[Both]`
+- **Title**:
+
+## Part 2 — News Hook `[Mode B only — comes BEFORE Part 1]`
+### 2.1 What happened
+news body that must vanish in Mode A.
+
+## Part 5.X Chain metrics `[Chain / L2]`
+- chain-only metric `[AUTO: DefiLlama TVL]`
+
+## Part 5.Y Stablecoin metrics `[Stablecoin]`
+- Stablecoin supply `[AUTO: DefiLlama stablecoins]`
+
+## Part 6 — Competitive `[Both, essential]`
+shared competitive body kept for every subject.
+"""
+
+SREF_CHAIN = SubjectRef(subject="Ethereum", subject_type="chain", decimals=None)
+SREF_UNKNOWN = SubjectRef(subject="MysteryDAO", subject_type="wallet", decimals=None)
+
+
+def test_select_keeps_stablecoin_module_drops_chain_and_modeB():
+    kept, info = select_sections(MODULE_TEMPLATE, "stablecoin", mode="subject_driven")
+    # subject-type-agnostic [Both] + the matching [Stablecoin] module survive
+    assert "Stablecoin metrics" in kept
+    assert "Part 0 — Meta" in kept and "Competitive" in kept
+    # the [Chain] module and the [Mode B only] section are GONE (not flagged)
+    assert "Chain metrics" not in kept
+    assert "chain-only metric" not in kept
+    assert "News Hook" not in kept and "news body" not in kept
+    assert "Part 2 — News Hook" in info["omitted"][0] or any(
+        "News Hook" in h for h in info["omitted"])
+    assert info["failsafe"] is None
+
+
+def test_select_keeps_chain_module_drops_stablecoin():
+    kept, info = select_sections(MODULE_TEMPLATE, "chain", mode="subject_driven")
+    assert "Chain metrics" in kept
+    assert "Part 0 — Meta" in kept and "Competitive" in kept
+    assert "Stablecoin metrics" not in kept
+    assert "Stablecoin supply" not in kept
+    # Mode B section still dropped (we are in Mode A regardless of subject)
+    assert "News Hook" not in kept
+
+
+def test_select_failsafe_keeps_everything_for_unknown_subject_type():
+    kept, info = select_sections(MODULE_TEMPLATE, "wallet", mode="subject_driven")
+    # unmapped type -> nothing dropped, both modules + Mode B section survive
+    assert "Chain metrics" in kept and "Stablecoin metrics" in kept
+    assert "News Hook" in kept
+    assert kept == MODULE_TEMPLATE
+    assert info["failsafe"] and "wallet" in info["failsafe"]
+    assert info["omitted"] == []
+
+
+def test_select_payment_chain_keeps_payment_not_generic_chain_token():
+    # "payment chain" is consumed before the generic "chain" token, so a
+    # [Payment chain] section is NOT kept for a plain chain subject.
+    tmpl = "## Part 5.3 Payment chain–specific `[Payment chain]`\n- m `[AUTO: x]`\n"
+    kept_pay, _ = select_sections(tmpl, "payment_chain")
+    kept_chain, _ = select_sections(tmpl, "chain")
+    assert "Payment chain–specific" in kept_pay
+    assert "Payment chain–specific" not in kept_chain
+
+
+def test_fill_runs_module_selection_when_subject_ref_present():
+    # fill() drops the [Mode B only] News Hook for a Mode-A stablecoin run.
+    out = fill(MODULE_TEMPLATE, [], SREF)
+    assert "Stablecoin metrics" in out
+    assert "Chain metrics" not in out
+    assert "News Hook" not in out
+    assert "[AUTO module-aware]" in out and "stablecoin" in out
+
+
+# --------------------------------------------------------------------------- #
 # ★ real end-to-end test
 # --------------------------------------------------------------------------- #
 def _newest(source: str, pattern: str):
@@ -306,6 +392,110 @@ def test_real_usdc_end_to_end_fill(capsys):
         f"slots UNFILLED (flagged): {markdown.count('UNFILLED [AUTO]')}",
         f"SEMI-AUTO flagged: {markdown.count('NEEDS HUMAN REVIEW [SEMI-AUTO]')}",
         f"MANUAL flagged: {markdown.count('**MANUAL** — researcher must fill')}",
+    ]
+    with capsys.disabled():
+        print("\n".join(summary))
+
+
+def _build_usdc_reconciled():
+    """Run the real USDC chain: on-disk envelopes -> pure extractors -> reconcile().
+    Returns ``(sref, reconciled)`` or ``None`` if no envelopes are present."""
+    from analysis_layer.extractors import (
+        alchemy, etherscan, coingecko, coinmarketcap, defillama,
+    )
+    from analysis_layer.resolvers.subject_ref import resolve_subject
+    from analysis_layer.aggregators.reconcile import reconcile
+
+    sref = resolve_subject("USDC")
+    decimals = sref.decimals
+
+    inputs = []
+    a = _first("alchemy", "*.json", lambda e: alchemy.decode_total_supply(e, decimals))
+    if a:
+        inputs.append(a)
+    es = _first("etherscan", "*.json", lambda e: etherscan.extract_supply(e, decimals))
+    if es:
+        inputs.append(es)
+    cg = _first("coingecko", "usdc_*.json", coingecko.extract_spot_metrics)
+    if cg:
+        inputs.extend(cg)
+    cmc = _first("coinmarketcap", "usdc_*.json", coinmarketcap.extract_latest_quote)
+    if cmc:
+        inputs.extend(cmc)
+    dl = _first("defillama", "usdc_*.json", lambda e: defillama.latest(e))
+    if dl:
+        inputs.append(dl)
+
+    if not inputs:
+        return None
+    return sref, reconcile(inputs)
+
+
+def test_real_usdc_module_aware_fill(capsys):
+    """★ THE PAYOFF — re-run the USDC chain and fill() the REAL v1.4 master
+    template with subject_type='stablecoin', mode A. The output must be a CLEAN
+    stablecoin report: the chain/payment/DeFi modules and the Mode-B News Hook are
+    GONE entirely, the Stablecoin module + the subject-agnostic [Both] sections
+    stay, and the stablecoin [AUTO] supply slots are still filled."""
+    if not TEMPLATE_V14.exists():
+        pytest.skip("v1.4 template absent")
+    built = _build_usdc_reconciled()
+    if built is None:
+        pytest.skip("no real USDC envelopes on disk")
+    sref, reconciled = built
+
+    markdown = fill(TEMPLATE_V14.read_text(encoding="utf-8"), reconciled, sref,
+                    mode="subject_driven")
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = OUT_DIR / "usdc_b28b_module_aware.md"
+    out_path.write_text(markdown, encoding="utf-8")
+
+    # ---- OMITTED: chain / payment / DeFi modules + the Mode-B News Hook ---- #
+    # (anchored on header strings unique to each omitted section)
+    assert "通用指标" not in markdown               # 5.1 generic chain metrics
+    assert "Chain-specific" not in markdown          # 5.2
+    assert "TVL 不是核心" not in markdown            # 5.3 payment-chain header
+    assert "Utilization rate" not in markdown        # 5.4 DeFi-protocol metric
+    assert "News Hook" not in markdown               # Part 2 (Mode B only)
+    assert "4.3 Tokenomics" not in markdown          # crypto-native-asset only
+    assert "If no token exists" not in markdown      # Part 8 Path B (infra)
+
+    # ---- KEPT: the Stablecoin module + the [Both] sections ---------------- #
+    assert "Stablecoin module" in markdown           # 5.5
+    assert "Reserve & Backing" in markdown           # 5.5 D
+    assert "Issuer Economics" in markdown            # 5.5 E
+    assert "Thesis & Framing" in markdown            # Part 1 [Both]
+    assert "Competitive Landscape" in markdown       # Part 6 [Both]
+    assert "Part 11 — Conclusion" in markdown        # Part 11 [Both]
+    assert "Path C" in markdown                      # stablecoin valuation path
+
+    # ---- stablecoin [AUTO] supply slot still filled, rest flagged --------- #
+    assert "[AUTO ✓ FILLED" in markdown
+    by = {(r.metric, r.scope): r for r in reconciled}
+    if by.get(("total_supply", "single-chain")) is not None:
+        assert ("52.5" in markdown or "52.6" in markdown) and "single-chain" in markdown
+    if by.get(("total_supply", "multi_chain")) is not None:
+        assert ("76.3" in markdown or "76.4" in markdown) and "cross-chain" in markdown
+    assert "UNFILLED [AUTO]" in markdown
+    assert "no matching [AUTO] template slot" in markdown   # mcap/rank/volume etc.
+
+    # ---- evidence table, faithfulness flags, module-aware note ------------ #
+    assert "Auto Evidence Table" in markdown
+    assert "NEEDS HUMAN REVIEW [SEMI-AUTO]" in markdown
+    assert "**MANUAL** — researcher must fill" in markdown
+    assert "[AUTO subject_ref]" in markdown and "Circle" in markdown
+    assert "[AUTO module-aware]" in markdown and "stablecoin" in markdown
+
+    summary = [
+        "", "=== REAL USDC module-aware (v1.4) filled markdown ===",
+        f"written to: {out_path.relative_to(ROOT)}",
+        f"reconciled facts: {len(reconciled)}",
+        f"FILLED markers: {markdown.count('[AUTO ✓ FILLED')}",
+        f"UNFILLED (flagged): {markdown.count('UNFILLED [AUTO]')}",
+        "OMITTED modules: Part 2 (News Hook), 5.1 通用指标, 5.2 Chain-specific, "
+        "5.3 Payment chain, 5.4 DeFi, 4.3 Tokenomics, Path A, Path B",
+        "KEPT: Part 5.5 Stablecoin module + [Both] sections + Path C",
     ]
     with capsys.disabled():
         print("\n".join(summary))
