@@ -768,6 +768,28 @@ Per-metric table (scope noted):
 
 ---
 
+## TD-038 — fetch front (zero→report); half 2 of 2 of the pipeline front door
+
+**Status:** active 2026-06-02 (built in B.2.11 — a NEW module `analysis_layer/fetch_front.py` + a `--fetch` opt-in on the orchestrator. Completes the front door begun in TD-036: TD-036 was the PURE analysis half over existing envelopes; this is the IMPURE half that REFRESHES them first).
+
+**What was built.** `fetch_subject(subject, *, subject_type=None, freshness_window="30d", timeout=120, runner=None) -> list[str]` — resolves the subject_ref (clear `ValueError` if unresolvable), looks up the subject_type's fetcher set, and runs each B.1 fetcher in its own isolated, timed subprocess; returns per-source notes. `orchestrate.research()`/`_run()` gain `fetch=False` (+ `freshness_window`); `--fetch`/`--window` on the CLI. `research(fetch=False)` stays the PURE default (the network module is imported lazily only when `fetch=True`, so the offline path never touches it). `python -m analysis_layer.orchestrate USDC --fetch` does the full subject→fetch→fresh envelopes→research→report.
+
+**★ Data-driven subject_type→sources map + per-source identifier resolution from subject_ref.** `SOURCES_BY_TYPE["stablecoin"]` = the Part 11.5 set (DefiLlama, CoinGecko, CoinMarketCap, Etherscan, Alchemy, SEC EDGAR), each a `SourceSpec` carrying the fetcher file, the `--subject` value (pulled from the right `subject_ref` binding), the per-fetcher subject_type, and any extra args. On-chain sources (Etherscan/Alchemy) get the `eth_contract` address + `--chain-id` (from `eth_chain`); SEC gets the `issuer` name (the fetcher resolves the CIK).
+
+**★ DEVIATION FROM THE MANDATE (deliberate, flagged) — market sources get the canonical NAME, not the slug/id.** The mandate said "coingecko→slug, cmc→id". Reality (TD-023, verified against the fetchers): (a) these fetchers resolve the subject by NAME internally (CoinGecko `/search`, CMC `/map` by slug-then-symbol, DefiLlama by stablecoins-list name) — CMC literally cannot resolve the numeric id `3408`; and (b) each NAMES ITS OUTPUT FILE after `--subject`, and `orchestrate` globs these sources as `<subject.lower()>_*.json`. So the fetch MUST pass `USDC` for the fresh envelope to be found by the analysis half — passing `usd-coin` would write `usd-coin_*.json` and the two halves would not compose. On-chain (address) + SEC (issuer) use the identifiers exactly as the mandate said.
+
+**★ Per-fetcher subject_type is NOT always the orchestrator's.** The market sources + Etherscan accept `stablecoin`; Alchemy's token-contract read (`eth_call totalSupply`) and SEC both live under `stablecoin_issuer` (their CLIs' `SUBJECT_TYPES`). The map encodes this per source.
+
+**★ Subprocess isolation + best-effort tolerance (no crash on a failed fetcher).** Each fetcher runs via `subprocess.run(..., timeout=)` with `cwd=ROOT`; a non-zero exit / network error / rate-limit / subject-not-found / timeout / a raising runner is captured as a `FAILED`/`SKIPPED` note and the run CONTINUES (the DefiLlama-failed-that-run lesson). `research()` then analyses whatever envelopes landed — a missing source just leaves its section flagged. The runner is injectable (`runner=`) so tests stub it (no real network in CI).
+
+**★ I-003 secret handling.** This module never reads/logs/persists any API key — each fetcher reads its OWN key from `~/.config/anamnesis/<source>.key`. The one secret it handles is the SEC contact email: read from env var **`ANAMNESIS_SEC_EMAIL`** (a CHOSEN name — no pre-existing repo convention was found; flag for confirmation), passed to the SEC fetcher's `--sec-email` (process-memory only), and SCRUBBED from every returned note (defense in depth; a `TimeoutExpired` is reported without its `.cmd` so the email-bearing argv never leaks).
+
+**Verified.** `tests/analysis_layer/test_fetch_front.py` (12 tests, runner STUBBED — no network): wiring (exactly the 6 sources; each invocation's `--subject`/`--subject-type`/`--chain-id`/`--sec-email` correct); best-effort tolerance (one fetcher failing / raising / timing out → noted, others still run, never raises); missing-email → only SEC skipped; no-secret-leak (a hostile stub that echoes the email → scrubbed to `<sec-email redacted>`); unknown subject_type → graceful skip note; `research(fetch=False)` invokes no fetcher. **★ LIVE zero→report demo** (`python -m analysis_layer.orchestrate USDC --fetch`): 5/6 fetchers wrote FRESH 2026-06-02 envelopes live (DefiLlama, CoinGecko, CoinMarketCap, Etherscan, Alchemy — keyless or key-on-disk); SEC best-effort SKIPPED (no `$ANAMNESIS_SEC_EMAIL` set) and the run still completed over the existing SEC envelope. Filenames composed with the analysis globs as designed. (The fresh envelopes were then REMOVED to keep the value-pinned real-data tests on their 5-27 baseline — meta/raw is gitignored.) Full suite: same 4 pre-existing failures, no new ones.
+
+**Out of scope / remaining gaps:** multi-subject (only USDC is bound in the registry); the holder-count + real-usage KEY-SIGNAL legs (2/3, 3/3) still pending; non-stablecoin fetcher sets (chain/protocol rows for `SOURCES_BY_TYPE`); confirming the `ANAMNESIS_SEC_EMAIL` env-var name against any operator convention; parallelising the fetchers (currently sequential).
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.

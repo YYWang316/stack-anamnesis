@@ -226,6 +226,7 @@ class ResearchResult:
     filled_slots: int
     derivations: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
+    fetch_notes: List[str] = field(default_factory=list)
 
 
 def _resolve_or_raise(subject: str) -> SubjectRef:
@@ -309,8 +310,22 @@ def _run(
     template_path: "str | Path" = DEFAULT_TEMPLATE,
     raw_dir: "str | Path" = DEFAULT_RAW_DIR,
     out_dir: "str | Path" = DEFAULT_OUT_DIR,
+    fetch: bool = False,
+    freshness_window: str = "30d",
 ) -> ResearchResult:
-    """Build the report, WRITE it, and return the full result (path + summary)."""
+    """Build the report, WRITE it, and return the full result (path + summary).
+
+    When ``fetch`` is True, the IMPURE fetch front runs FIRST (refreshing the
+    on-disk envelopes via the B.1 fetchers) — best-effort, never crashing the
+    run — then the existing pure analysis runs over whatever landed."""
+    fetch_notes: List[str] = []
+    if fetch:
+        # imported lazily so the pure analysis path never pulls the network module
+        from analysis_layer.fetch_front import fetch_subject
+        fetch_notes = fetch_subject(
+            subject, subject_type=subject_type, freshness_window=freshness_window,
+        )
+
     markdown, sref, sources_loaded, reconciled, notes = build_report(
         subject, subject_type=subject_type, mode=mode,
         template_path=template_path, raw_dir=raw_dir,
@@ -331,7 +346,7 @@ def _run(
         path=path, markdown=markdown, subject=sref.subject,
         subject_type=sref.subject_type, sources_loaded=sources_loaded,
         reconciled_count=len(reconciled), filled_slots=filled,
-        derivations=derivations, notes=notes,
+        derivations=derivations, notes=notes, fetch_notes=fetch_notes,
     )
 
 
@@ -343,17 +358,23 @@ def research(
     template_path: "str | Path" = DEFAULT_TEMPLATE,
     raw_dir: "str | Path" = DEFAULT_RAW_DIR,
     out_dir: "str | Path" = DEFAULT_OUT_DIR,
+    fetch: bool = False,
+    freshness_window: str = "30d",
 ) -> Path:
-    """Regenerate ``subject``'s research report from on-disk envelopes. PURE.
+    """Regenerate ``subject``'s research report. Returns the written report's path.
 
-    Steps (all pure — no network, no env-key reads): resolve_subject → load the
-    newest envelope per source → extract (all 6 sources incl. SEC) → reconcile →
-    supply-change derivation → module-aware fill → write. Returns the written
-    report's path. Raises ``ValueError`` if the subject is not in the registry.
+    Default (``fetch=False``) is PURE — no network, no env-key reads: resolve →
+    load newest envelope per source → extract (all 6 incl. SEC) → reconcile →
+    supply-change derivation → module-aware fill → write. With ``fetch=True`` the
+    IMPURE fetch front (``analysis_layer.fetch_front``) runs FIRST to refresh the
+    envelopes (best-effort — a failed fetcher is noted and skipped, never
+    crashes), giving a full zero→report run. Raises ``ValueError`` if the subject
+    is not in the registry.
     """
     return _run(
         subject, subject_type=subject_type, mode=mode,
         template_path=template_path, raw_dir=raw_dir, out_dir=out_dir,
+        fetch=fetch, freshness_window=freshness_window,
     ).path
 
 
@@ -375,12 +396,18 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help="template path (default: v1.4 master SOP)")
     parser.add_argument("--raw-dir", default=DEFAULT_RAW_DIR)
     parser.add_argument("--out-dir", default=DEFAULT_OUT_DIR)
+    parser.add_argument("--fetch", action="store_true",
+                        help="IMPURE: refresh envelopes via the B.1 fetchers "
+                             "first (best-effort), then analyse (zero→report)")
+    parser.add_argument("--window", default="30d",
+                        help="freshness window passed to the fetchers (--fetch only)")
     args = parser.parse_args(argv)
 
     try:
         result = _run(
             args.subject, subject_type=args.subject_type, mode=args.mode,
             template_path=args.template, raw_dir=args.raw_dir, out_dir=args.out_dir,
+            fetch=args.fetch, freshness_window=args.window,
         )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -390,6 +417,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         printed_path = result.path.relative_to(ROOT)
     except ValueError:
         printed_path = result.path
+    if result.fetch_notes:
+        print("fetch front (best-effort refresh):")
+        for note in result.fetch_notes:
+            print(f"  - {note}")
     print(f"report written to: {printed_path}")
     skipped = [s for s in SOURCE_EXTRACTORS if s not in result.sources_loaded]
     summary = (
