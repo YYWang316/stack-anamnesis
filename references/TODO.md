@@ -790,6 +790,19 @@ Per-metric table (scope noted):
 
 ---
 
+## TD-039 — inherited equity card / incident-loop tests parked behind skip-guards (not deleted)
+
+**Status:** active 2026-06-02 (repo-cleanup pass). Three inherited tests asserted contracts that the crypto Lane-A pipeline does not yet exercise; rather than delete the inherited photo/incident infrastructure (kept as reusable method reference), they are now SKIPPED with explicit, self-documenting reasons so `python3 -m pytest -q` is green (`0 failed`, some `skipped`) without hiding what is parked.
+
+**What was parked and why:**
+
+- `tests/test_card_money_scale_validator.py` (2 tests) — import `skills_repo/ep/scripts/generate_social_cards.py`. The `ep` (Equity Photo) submodule is **not checked out** (`skills_repo/` is empty — no `.gitmodules` in this fork), so the 6-card photo pipeline is inactive. Guarded with `pytest.mark.skipif(not EP_SCRIPT.exists())`: the moment `ep` is checked out, the tests run again automatically. No deletion — the photo pipeline stays as inherited method reference.
+- `tests/test_incident_loop.py::test_all_incidents_reachable_in_a_well_formed_payload` — asserts `INCIDENTS.md` contains ≥1 `I-NNN` entry. The committed `INCIDENTS.md` is an **empty scaffold** (no incidents logged yet for this fork; mature-domain examples archived to `references/equity_incidents_archive.md`, not enforced). The other incident-loop tests (schema validation, supersede graph, phase wiring, lint) all pass against the empty log and stay live. Only the "≥1 entry" coverage test is skipped, with a reason pointing here.
+
+**Revisit when:** (a) the `ep` submodule is checked out / the crypto card pipeline (B.5) lands — the skipif clears itself; (b) the first real crypto failure is captured via `/log-incident`, populating `INCIDENTS.md` with `I-001` — drop the skip on the coverage test.
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.

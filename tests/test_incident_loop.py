@@ -26,6 +26,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 INCIDENTS = ROOT / "INCIDENTS.md"
 WORKFLOW_META = ROOT / "workflow_meta.json"
@@ -146,6 +148,12 @@ def test_postcheck_schema_rejects_missing_required_field():
 # Coverage: every incident reachable from a well-formed payload
 # ─────────────────────────────────────────────────────────────────────
 
+@pytest.mark.skip(
+    reason="INCIDENTS.md I-NNN log retained as inherited reference scaffold, not "
+    "in active use yet — no incident logged for this fork (mature-domain examples "
+    "archived to references/equity_incidents_archive.md). Drop this skip once the "
+    "first crypto incident is captured via /log-incident as I-001. See TD-039."
+)
 def test_all_incidents_reachable_in_a_well_formed_payload():
     """The post-check contract is one entry per incident. Build a synthetic
     pass-payload from the parsed INCIDENTS and assert it validates and that

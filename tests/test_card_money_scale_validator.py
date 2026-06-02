@@ -4,9 +4,20 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 EP_SCRIPT = ROOT / "skills_repo" / "ep" / "scripts" / "generate_social_cards.py"
+
+# photo/cards pipeline inactive; skills_repo/ep submodule not checked out (see
+# references/TODO.md TD-039). The 6-card Equity Photo pipeline is retained as
+# inherited method reference, not wired into the crypto Lane-A pipeline. The
+# guard clears itself the moment the ep submodule is checked out.
+pytestmark = pytest.mark.skipif(
+    not EP_SCRIPT.exists(),
+    reason="photo/cards pipeline inactive; skills_repo/ep submodule not checked out (TD-039)",
+)
 
 
 def _load_ep():

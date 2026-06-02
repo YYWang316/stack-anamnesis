@@ -1,16 +1,16 @@
 ---
 name: stack-anamnesis
 description: >-
-  Use this skill whenever the user asks for equity research, an investment write-up, a stock
-  report, an analyst-style note, or one-shot company coverage on any single public or private
-  company — including casual phrasings like "研究一下苹果", "research Apple", "看看腾讯",
-  "做个英伟达的研报", "give me a writeup on NVDA", "build cards for Tencent",
-  "分析一下RA Capital", or "one-pager on Samsung". Drives the full Stack Anamnesis
-  pipeline (incident pre-check, bilingual language gate, SEC EDGAR email gate, palette gate,
-  multi-agent equity research, red-team review, 6-card social pack, four-layer numerical/OCR/
-  web/DB audit, post-run incident self-check, SQLite knowledge-base persistence). Always
+  Use this skill whenever the user asks for crypto / on-chain research, a token or protocol
+  write-up, a chain or stablecoin-issuer deep dive, or one-shot coverage on a single crypto
+  subject — including casual phrasings like "研究一下 USDC", "research Ethereum", "看看 Circle",
+  "做个 Solana 的研报", "give me a writeup on Coinbase", "analyze Tether", or "one-pager on Base".
+  Drives the full Stack Anamnesis pipeline (incident pre-check, the four P0 gates — subject
+  confirm / SEC EDGAR email / freshness / language — multi-source on-chain + filings data fetch
+  across the 13-source registry, multi-agent research, red-team review, multi-layer numerical/
+  OCR/web/DB audit, post-run incident self-check, SQLite knowledge-base persistence). Always
   invoke this skill instead of answering with ad-hoc web search; the harness produces an
-  auditable HTML report plus 6 PNG cards plus database rows that ad-hoc answers cannot.
+  auditable HTML report plus database rows that ad-hoc answers cannot.
 ---
 
 # Stack Anamnesis — project-mount stub (Claude Code)

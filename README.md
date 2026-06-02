@@ -1,303 +1,150 @@
 <!--
-keywords: Stack Anamnesis, Anamnesis Pattern, crypto payments research, agentic payments, stablecoin issuer analysis, payment orchestrator research, wallet defensibility, chain research, x402 protocol, AP2 agent payments, stack-position defensibility, agent institutional memory, closed-loop agent harness, agent failure log, adversarial AI audit, cross-session agent memory, harness design, red-team AI agents, CFRV cycle, veteran agent pattern
+keywords: Stack Anamnesis, crypto research pipeline, stablecoin research, on-chain data reconciliation, USDC analysis, source-authority reconciliation, supply momentum signal, module-aware template fill, Anamnesis Pattern, agent institutional memory, deterministic research pipeline
 -->
-
-> Built on the **Anamnesis Pattern** (originally developed in the upstream
-> `anamnesis-research` repo for equity research; see
-> `references/anamnesis_pattern.md` for the methodology and
-> `references/equity_incidents_archive.md` for the equity-domain failures
-> that originally shaped it). This repo applies the same harness to crypto
-> payments infrastructure and agentic-payment research, with the central
-> research lens being **stack-position defensibility** — anchored on
-> reference market maps like a16z's stablecoin stack.
 
 # Stack Anamnesis
 
-> **A crypto-payments-stack research harness built on the Anamnesis Pattern — cross-session institutional memory + scheduled adversarial review.**
->
-> **Research lens:** stack-position defensibility across the five layers of the payments stack — stablecoin issuers, payment orchestrators, wallets, chains, and agentic-payment protocols (x402 / AP2 / agent SDKs). One subject per run, classified at `P0_subject_class` against the five-class taxonomy in `references/subject_taxonomy.md`.
->
-> *(Originally codenamed `equiforge` in early development; the codename is retained only as a historical field in `workflow_meta.json` and as the SQLite database name. Everything user-facing — CLI, docs, agent descriptions — is **Stack Anamnesis**.)*
+> **A deterministic crypto-research pipeline: one subject in, one reconciled, provenance-tracked markdown report out.** Built on (and disciplined by) the **Anamnesis Pattern** — cross-session institutional memory + adversarial review.
 
----
-
-## The veteran vs. the junior — why this exists
-
-Open a new context window for any agent. It starts blank. No memory of yesterday's mistake, no awareness of last quarter's near-miss, no scar tissue from the failure mode that bit you twice. Every session is a **junior employee on day one** — same blind spots, same risk of repeating yesterday's error.
-
-Most "agent memory" designs paper over this — RAG retrieves snippets when the agent thinks to ask; auto-logged traces pile up unread; session memory dies with the chat. None of them turn the junior into a **veteran**.
-
-A veteran is different. A veteran walks in already knowing:
-
-- *"Last time on a private fund we tried to skip the locked template — that report had to be re-done. Don't even think about it on this one."*
-- *"Auto mode is not authorization to invent a default colour palette — that cost us a full re-render once already."*
-- *"When the macro factor matches a peer's prior run, reuse it; don't re-collect."*
-
-That knowledge is what we lose every time we open a new agent context. **Stack Anamnesis is what an agent harness looks like when you refuse to lose it.**
-
-The pattern (Greek *ἀνάμνησις*, "recollection") has a four-beat closed loop that:
-
-1. **curates** every real failure into a permanent rule (humans gate it, not auto-log),
-2. **freezes** that rule into the system prompt at the start of every future session,
-3. **reads** every rule explicitly at the start of every run,
-4. **verifies** every rule was honoured before delivery — and **blocks shipping if any was relapsed**.
-
-Plus a fifth axis: at named gates inside each run, two adversarial agents (a numeric attacker and a narrative attacker) actively try to break the writer's draft. Distinct from QC peers — peers vote on agreement; attackers try to falsify.
-
-The result is an agent harness that **shows up for work as a veteran every single time**.
-
----
-
-## What's distinctive
-
-- **Cross-session institutional memory, frozen not retrieved.** `INCIDENTS.md` is loaded verbatim into every session's system prompt at boot — alongside `MEMORY.md`. The agent cannot fail to look up a rule, because the rule is already in front of it.
-- **Curated, not auto-logged.** New entries to `INCIDENTS.md` come only through the `/log-incident` slash command, with the human confirming before append. This is the throttle that prevents memory inflation; auto-logging projects collapse into noise within weeks.
-- **Hard enforcement, not soft warning.** `P_INCIDENT_POSTCHECK` runs before delivery and re-checks every accumulated rule. A flagged entry — relapse on a known failure — **blocks DB write**. The pipeline does not ship.
-- **Adversarial review as a scheduled phase.** `P5_7_RED_TEAM` and `P10_7_RED_TEAM` fire two attackers in parallel — `red_team_numeric` (source chains, units, tolerances) and `red_team_narrative` (hidden assumptions, missing counter-evidence, score directionality). Critical findings loop the writer once.
-- **QC peers and attackers are separate jobs.** Peers vote on agreement (consensus); attackers try to falsify (Popperian). Conflating them dilutes both.
-- **Composition by SHA-pinned submodule, not copy.** Upstream skills (`skills_repo/er`, `skills_repo/ep`) stay in their own repos with their own maintainers; this project consumes them at pinned SHAs and adds the orchestration + cross-cutting policy. No symlinks, no aliasing.
-- **Defence in depth on triggering.** Skill description match + project skill mount + UserPromptSubmit hook = three independent paths to "the model reads the right files at the right time."
-- **Compliance is enforced by tests, not policy.** PII is regression-tested; HTML template is SHA256-pinned; phase contract is schema-validated. A rule that is not enforceable in code is not a rule, it is a wish.
-
-For the full methodology (the *why* behind each of these), see `references/anamnesis_pattern.md`. For inherited principles from Anthropic's harness/skill design, see `references/inherited_principles.md`.
-
----
-
-## Methodology — the Anamnesis Pattern
-
-The pattern closes a feedback loop most agent harnesses leave open. **Two interlocking loops, plus an adversarial axis.**
-
-```mermaid
-flowchart LR
-    subgraph OUTER["OUTER LOOP — across runs (institutional learning)"]
-      direction LR
-      F([failure observed]) --> CURATE["1 · Curate<br/>/log-incident<br/>human-gated entry"]
-      CURATE --> FREEZE["2 · Freeze<br/>append to INCIDENTS.md<br/>frozen into next session"]
-    end
-
-    FREEZE -.next run boots.-> READ
-
-    subgraph INNER["INNER LOOP — within one run (enforcement)"]
-      direction TB
-      READ["3 · Read<br/>P_INCIDENT_PRECHECK<br/>ack each rule"]
-      READ --> WORK[phase work<br/>matched-incident phases<br/>raise the bar]
-      WORK --> ATTACK[adversarial review<br/>P5.7 + P10.7 red team]
-      ATTACK --> AUDIT[P12 four-layer audit]
-      AUDIT --> VERIFY["4 · Verify<br/>P_INCIDENT_POSTCHECK<br/>each rule pass | flagged"]
-      VERIFY -->|flagged| BLOCK([❌ BLOCK delivery])
-      VERIFY -->|pass| DELIVER([✅ deliver + DB write])
-    end
-
-    DELIVER -.observe outcome.-> F
+```bash
+python -m analysis_layer.orchestrate USDC            # analyse on-disk envelopes → report
+python -m analysis_layer.orchestrate USDC --fetch    # refresh from source APIs first, then analyse
 ```
 
-The outer loop is **institutional learning across runs**: failure → curate → freeze → next session boots with the new rule. The inner loop is **enforcement within one run**: read every rule → do phase work with raised standards on matched incidents → attackers fire → P12 audits → post-check verifies no relapse → deliver, or block.
+That one command resolves the subject, gathers data from up to **seven source fetchers**, extracts typed facts, **reconciles them by source authority (never by averaging)**, derives the supply-momentum signal, fills a module-aware template, and writes a clean per-subject markdown report to `meta/reports/`.
 
-The two loops connect at exactly two files: `INCIDENTS.md` (the institutional log) and `meta/system_prompt.frozen.txt` (the per-run snapshot of what was frozen).
+---
 
-### The CFRV cycle (the 4 beats)
+## What this repo actually does today
 
-The four beats of the loop, named: **Curate · Freeze · Read · Verify**.
+The live, tested pipeline lives entirely under [`analysis_layer/`](analysis_layer/). It is a single-subject crypto research pipeline whose current bound subject is **USDC (issuer: Circle)**. Given a subject it produces a markdown research report by filling [`references/templates/crypto_research_v1.3.md`](references/templates/crypto_research_v1.3.md) (whose content header reads *Research SOP v1.4* — the unified master template with the Part 5.1–5.5 subject-type modules).
 
-| Beat | What happens | Where it lives | Why this design |
-|---|---|---|---|
-| **1 · Curate** | A failure surfaces. A *human* (not the agent) writes one entry via `/log-incident <one-line description>`. The model drafts the entry from the latest run's digest; the human confirms before append. | `.claude/commands/log-incident.md`, `tools/io/log_incident.py` | Curation is the throttle that prevents memory inflation. Auto-logging collapses into noise; human gating forces *"is this worth being read every session forever?"* — almost everything fails that bar, and that's the point. |
-| **2 · Freeze** | The entry appends to `INCIDENTS.md` and is loaded **verbatim** into the next session's system prompt at boot, alongside `MEMORY.md`. Captured to `meta/system_prompt.frozen.txt` for replay. | `INCIDENTS.md`, `workflow_meta.json -> memory_files` | Frozen, not retrieved. The agent doesn't decide whether to look up the rule — the rule is in front of it. The worst failures happen when the agent doesn't know to ask. |
-| **3 · Read** | Every run's first phase, `P_INCIDENT_PRECHECK`, reads `INCIDENTS.md` end-to-end and writes one `incident_precheck.acknowledged` event per entry to `meta/run.jsonl`. Phases that match an accumulated incident raise the bar — strict reading of the contract, no shortcuts. | `agents/orchestrator.md` §1.5, `workflow_meta.json -> P_INCIDENT_PRECHECK` | Mandatory ack ensures the agent has actually processed the rule, not just been "shown" it. Resume from a fresh session re-fires this — incidents may have been added between sessions. |
-| **4 · Verify** | Every run's penultimate phase, `P_INCIDENT_POSTCHECK`, re-checks each entry's detection signal. Output: `validation/incident_postcheck.json` with `pass | flagged` per incident. **Any flagged entry blocks `P_DB_INDEX`.** | `agents/orchestrator.md` §16.5, `workflow_meta.json -> P_DB_INDEX.requires` | A relapse on a known failure is more serious than a brand-new bug — the harness already knew, and the run still failed to comply. Hard halt, not warning. |
+The data flow, end to end:
 
-Plus the **5th axis**: scheduled adversarial review. At named gates (`P5_7_RED_TEAM` after the report draft, `P10_7_RED_TEAM` before card render), two attackers fire in parallel — `red_team_numeric` and `red_team_narrative`. These are distinct from QC peer agents (`qc_macro_peer_a/b`, `qc_porter_peer_a/b`):
+```
+subject (e.g. USDC)
+   │
+   │  [--fetch only]  fetch_front.py → run the B.1 fetchers (isolated, timed, best-effort)
+   ▼                  writing fresh envelopes to meta/raw/<source>/
+meta/raw/<source>/*.json   (uniform JSON "envelopes")
+   │
+   ▼  extractors/      one pure fn per source: envelope dict → typed ExtractedValue | None
+   │                   (alchemy, etherscan, coingecko, coinmarketcap, defillama, sec_edgar)
+   ▼  resolvers/       subject_ref (subject → decimals / ids / issuer), source_authority
+   │
+   ▼  aggregators/     reconcile() — cross-source → single best value + audit trail,
+   │                   chosen by per-metric SOURCE AUTHORITY, not by averaging
+   ▼  derivations/     supply_change — net 7d / 30d / 90d supply momentum (KEY SIGNAL leg 1/3)
+   │
+   ▼  fillers/         fill() — MODULE-AWARE, TAG-AWARE template fill, keyed on subject_type
+   │                   ([AUTO] / [SEMI-AUTO] / [MANUAL])
+   ▼
+meta/reports/<subject>_<UTC>.md   (clean, subject-typed markdown report)
+```
 
-| | QC peers | Red-team attackers |
-|---|---|---|
-| Job | vote on agreement; weighted-average; flag deltas > tolerance | try to break the writer's claim; succeed on finding a defect |
-| Output | score deltas → audit trail | challenge list with severity → loop writer if critical |
-| Loop budget | high (cap = 3) | low (cap = 1) |
-| Clean output is | suspicious — peers usually disagree on something | acceptable — a clean draft is a valid result |
+[`orchestrate.py`](analysis_layer/orchestrate.py) is the front door — `research()` / `build_report()` plus a thin CLI. By default it is **pure**: it reads whatever envelopes already sit under `meta/raw/`, makes no network calls, reads no API keys, and is byte-deterministic for a fixed set of envelopes (only the output filename's UTC stamp changes). The `--fetch` flag turns on the one impure half ([`fetch_front.py`](analysis_layer/fetch_front.py)), which refreshes the envelopes first by shelling out to the fetchers in `tools/fetchers/`, then runs the same pure analysis over whatever landed.
 
-A clean attacker output (zero findings) is valid. The harness must not pressure attackers to manufacture issues.
+### Design properties that are actually enforced in code
 
-### How this differs from other agent memory designs
+- **Authority, not averaging.** The aggregator reconciles competing values by a per-metric source-authority order (CoinGecko = price/market-cap, DefiLlama = TVL, on-chain Etherscan/Alchemy = supply truth, CMC = cross-check). It never silently averages two sources into a fake middle. Different *scopes* (cross-chain total vs Ethereum-only supply) are never reconciled against each other.
+- **Best-effort, never crash.** A missing or malformed envelope, or a failed fetcher (missing key, rate-limit, timeout), is recorded as a note and skipped — the report still builds and the affected section stays flagged.
+- **Flagged, not fabricated.** An `[AUTO]` slot with no reconciled value is rendered as `⚠ UNFILLED [AUTO]`; a `[SEMI-AUTO]` slot is rendered as `⚠ NEEDS HUMAN REVIEW`. Empty data is shown as empty, never invented.
+- **Module-aware fill.** Only the template sections that apply to the subject's `subject_type` are rendered. For a stablecoin (USDC) the report fills Part 5.5 (stablecoin module) and the issuer-financials path; chain-only sections (5.1/5.2) are correctly omitted, not left as noise.
+- **Provenance carried, not re-derived.** Every extracted fact travels with its `source`, `unit`, and `as_of` timestamp, so the aggregator reconciles without re-reading raw, and the `as_of` gap between two on-chain reads is accounted for rather than false-flagged as a discrepancy.
+- **Secrets stay in process memory.** `fetch_front` never reads, logs, or persists an API key — each fetcher reads its own key from `~/.config/anamnesis/<source>.key`. The SEC contact email is read from `$ANAMNESIS_SEC_EMAIL`, passed to the SEC fetcher's `--sec-email`, and scrubbed from every returned note.
 
-| | Anamnesis Pattern | Vector RAG memory | Session memory | Auto-logging |
-|---|---|---|---|---|
-| Cross-session | ✓ frozen at boot | ✓ retrieved on query | ✗ | ✓ |
-| Curated | ✓ human-gated | ✗ | n/a | ✗ |
-| Read mandatory pre-run | ✓ | ✗ (only if model asks) | n/a | rarely |
-| Verified post-run | ✓ | ✗ | ✗ | ✗ |
-| Relapse blocks delivery | ✓ | ✗ | ✗ | ✗ |
-| Scales as log grows | ✓ curation throttle | degrades — noise dilutes retrieval | n/a | degrades — noise floods log |
-| Adversarial review | ✓ scheduled phases | ✗ | ✗ | ✗ |
+### Sources
 
-The pattern's distinguishing claim: **a rule worth keeping is worth pre-checking, post-checking, and blocking on**. Anything weaker is a wish.
+Seven fetchers live in [`tools/fetchers/`](tools/fetchers/): `alchemy`, `coingecko`, `coinmarketcap`, `defillama`, `etherscan`, `l2beat`, `sec_edgar`. The stablecoin fetch set runs six of them (all but `l2beat`, which has no extractor mandate yet). Six extractors are wired in the orchestrator — including `sec_edgar`, so Circle's regulated SEC financials (latest-consistent fiscal year, per TD-037) flow into the report's Evidence Table alongside the on-chain metrics.
 
-### The pattern is general — equity research is one instance
+> **Scope today:** only `USDC` is bound in the subject_ref registry, and only the `stablecoin` subject_type has a defined fetcher set. Adding a new subject means adding its bindings in [`analysis_layer/resolvers/subject_ref.py`](analysis_layer/resolvers/subject_ref.py); adding a new subject_type means adding a row to `SOURCES_BY_TYPE`.
 
-The Anamnesis Pattern applies to any agent harness where:
+For the layer's full design and roadmap see [`analysis_layer/README.md`](analysis_layer/README.md); for the deferred design notes see [`references/TODO.md`](references/TODO.md).
 
-- Runs are **repeatable production work** (not one-off Q&A).
-- Failures are **expensive enough** to be worth permanent rules.
-- The deliverable is a **file tree** (artifacts, not just chat replies).
-- You have at least one **human curator** willing to gatekeep `/log-incident`.
+---
 
-| Domain | What earns an INCIDENTS entry | Adversarial axis |
-|---|---|---|
-| **Equity research** *(this repo)* | P0 gate bypass; locked template skipped on private fund | numeric attacker (sources/units/tolerance) + narrative attacker (Porter direction, counter-evidence) |
-| Legal brief drafting | misciting an overturned precedent; missing a jurisdictional element | citation auditor + counter-argument generator |
-| Medical diagnosis support | suggesting a ruled-out condition; ignoring a black-box warning | lab-value cross-check + differential-diagnosis devil's advocate |
-| Automated code review | repeating a known-rejected refactor; suggesting a deprecated API | static-analysis cross-check + "would this work in prod?" challenger |
-| Compliance audit | applying a deprecated control; missing a control that became required | control-coverage matrix + "what's conspicuously absent?" |
+## The Anamnesis Pattern — the discipline this repo is built under
 
-The minimum viable Anamnesis harness is: an INCIDENTS-style file + frozen-at-boot + a 2-phase bracket + 2 adversarial agents + a curation command. Stack Anamnesis wraps that minimum in an equity-research-specific 33-phase pipeline; your harness can wrap it in something else.
+The pipeline above is built and maintained under a methodology the maintainer carries across projects: the **Anamnesis Pattern** (Greek *ἀνάμνησις*, "recollection"). Most agent harnesses lose their scar tissue every time a new context window opens — every session starts as a junior on day one, blind to last quarter's near-miss. The Anamnesis Pattern is what an agent harness looks like when you refuse to lose it.
 
-Full pattern definition (with anti-patterns, applicability checklist, and required files): `references/anamnesis_pattern.md`.
+Its four beats — **Curate · Freeze · Read · Verify (CFRV)** — close the feedback loop most harnesses leave open:
+
+1. **Curate** — a *human* (not an auto-logger) turns each real failure into one permanent rule via `/log-incident`. Curation is the throttle that keeps the memory from inflating into noise.
+2. **Freeze** — the rule appends to `INCIDENTS.md` and is loaded verbatim into the next session's system prompt at boot, alongside `MEMORY.md`. The agent doesn't have to *decide* to look the rule up; it is already in front of it.
+3. **Read** — a pre-check phase reads every rule before work starts.
+4. **Verify** — a post-check phase re-checks every rule before delivery; a relapse blocks shipping.
+
+Plus a fifth axis: at named gates, two adversarial reviewers (a numeric attacker and a narrative attacker) try to *falsify* the draft — distinct from QC peers, who vote on *agreement*.
+
+This is the framework the maintainer keeps as discipline; see [`references/anamnesis_pattern.md`](references/anamnesis_pattern.md) for the full generalised methodology.
+
+> **Honest status of the loop in this fork.** `INCIDENTS.md` is currently an **empty scaffold** — no incident has been logged for the crypto pipeline yet (mature-domain examples are archived in `references/equity_incidents_archive.md`, not enforced). The `/log-incident` command, the lint tool, and the schema/wiring tests around the loop are live and pass against the empty log; the first real crypto failure captured via `/log-incident` becomes `I-001`. The full multi-agent gate/red-team/post-check *runtime* described in `workflow_meta.json` is **not** the path the crypto pipeline runs (see Status below).
+
+---
+
+## The inherited equity harness — kept as method reference, not the live path
+
+This repo was forked from an upstream equity-research harness (originally codenamed `equiforge`). A substantial amount of that harness is still in the tree — `anamnesis.py`, `workflow_meta.json`, `agents/`, `tools/research/`, `tools/photo/`, `tools/audit/`, `db/`, `HARNESS.md`, the equity-era `SKILL.md`, and the equity test suite. **It is retained deliberately as a reusable substrate and method reference**, not because the crypto pipeline runs through it.
+
+The two are **decoupled at the code level**: `analysis_layer/` imports only the Python standard library and itself — **zero imports** from `anamnesis.py`, `workflow_meta.json`, `agents/`, or the `tools/research|photo|audit` packages. The only cross-boundary call is `fetch_front` shelling out to the crypto fetchers in `tools/fetchers/` as subprocesses. You can read, run, and reason about the crypto pipeline without touching the inherited harness at all.
+
+If you came here for the equity harness's architecture, `HARNESS.md` still documents it. Just don't mistake it for what `python -m analysis_layer.orchestrate` does.
 
 ---
 
 ## Repository layout
 
-Stack Anamnesis is a **harness-backed skill**: delivered as a skill (`SKILL.md` is the auto-trigger entry), maintained as a production harness (`HARNESS.md` is the architecture doc).
+```
+stack-anamnesis/
+├── analysis_layer/              # ★ the live crypto pipeline (stdlib-only; zero equity imports)
+│   ├── orchestrate.py           #   front door — research() / build_report() + CLI (pure by default)
+│   ├── fetch_front.py           #   the one impure half — --fetch refreshes envelopes (best-effort)
+│   ├── contract.py              #   ExtractedValue / ReconciledValue / SubjectRef dataclasses
+│   ├── extractors/              #   one pure fn per source: envelope → typed value | None
+│   ├── resolvers/               #   subject_ref (subject → decimals/ids), source_authority
+│   ├── aggregators/             #   reconcile() — authority-based cross-source reconciliation
+│   ├── derivations/             #   supply_change — net 7d/30d/90d supply momentum
+│   ├── fillers/                 #   fill() — module-aware, tag-aware template fill
+│   └── README.md                #   the layer's persisted design + roadmap
+│
+├── tools/fetchers/              # 7 source fetchers (alchemy, coingecko, coinmarketcap,
+│                                #   defillama, etherscan, l2beat, sec_edgar) — invoked by fetch_front
+├── references/
+│   ├── templates/crypto_research_v1.3.md   # the report template (content header: SOP v1.4)
+│   ├── anamnesis_pattern.md     #   the methodology, generalised
+│   ├── TODO.md                  #   deferred design notes (TD-NNN)
+│   └── equity_incidents_archive.md         # archived equity-domain incidents (reference, not enforced)
+├── meta/
+│   ├── raw/<source>/*.json      #   fetched envelopes (gitignored runtime input)
+│   └── reports/                 #   ★ generated reports land here
+│
+├── INCIDENTS.md                 # institutional-memory log (currently an empty scaffold)
+├── MEMORY.md                    # project invariants — frozen into the system prompt at boot
+├── SKILL.md / .claude/ / .agents/   # skill entry + host mounts (mounts mirror root frontmatter)
+│
+│  — inherited equity harness, retained as method reference (NOT the live path) —
+├── anamnesis.py                 # equity-era deterministic-phase driver
+├── workflow_meta.json           # equity-era phase/gate contract (stale residue, see TD-010)
+├── HARNESS.md                   # equity harness architecture doc
+├── agents/  tools/research/  tools/photo/  tools/audit/  db/
+│
+└── tests/                       # pytest suite (crypto pipeline + inherited equity tests)
+```
 
-```
-stack-anamnesis/                 # stack-anamnesis (originally codenamed equiforge — see workflow_meta.json)
-├── SKILL.md                        # ★ thin skill entry — boot order, P0 gates, pointers
-├── HARNESS.md                      # harness/architecture/CLI/tests
-├── MEMORY.md                       # project invariants — frozen at session start
-├── INCIDENTS.md                    # ★ append-only failure log — frozen at session start
-├── USER.md                         # per-user preferences (gitignored; copy from .template)
-├── workflow_meta.json              # machine-readable phase/gate contract (33 phases)
-├── anamnesis.py                    # CLI entry — Stack Anamnesis's deterministic-phase driver
-│
-├── .claude/                        # Claude Code project-scoped configuration
-│   ├── skills/stack-anamnesis/SKILL.md   # project skill mount (auto-discovery)
-│   ├── settings.json               # hooks block
-│   ├── hooks/inject_incidents.py   # UserPromptSubmit safety net (incident reminder)
-│   └── commands/log-incident.md    # /log-incident slash command (the Curate beat)
-│
-├── agents/                         # project-owned briefs (orchestrator, gates, auditors, attackers)
-│   ├── orchestrator.md             # the runtime brief that drives one run
-│   ├── intent_resolver.md
-│   ├── language_gate.md / sec_email_gate.md / palette_gate.md
-│   ├── post_card_auditor.md
-│   ├── cross_validator.md
-│   └── attackers/                  # ★ red-team adversarial reviewers
-│       ├── red_team_numeric.md     # numeric/source-chain/tolerance falsifier
-│       └── red_team_narrative.md   # narrative/Porter-direction/counter-evidence falsifier
-│   # upstream ER/EP agents stay under skills_repo/ — see HARNESS.md "ownership" section
-│
-├── references/                     # lazy-loaded skill docs
-│   ├── anamnesis_pattern.md        # ★ the methodology, generalised — start here for the pattern
-│   ├── inherited_principles.md     # principles inherited from Anthropic harness/skill design
-│   ├── workflow_diagram.md         # mermaid diagram of the 33-phase pipeline
-│   ├── phase_contract.md           # prose narrative of every phase
-│   ├── p0_gates.md                 # per-gate whitelist + sticky source rules
-│   ├── subagent_toolsets.md        # per-agent toolset matrix
-│   ├── run_artifacts.md            # what lands where in output/
-│   ├── cross_quarter.md            # DB reuse across runs
-│   └── maintenance.md              # template SHA, palette, schema, submodule bumps
-│
-├── tools/                          # registered Python CLIs
-│   ├── research/                   # template extract, HTML gate, packaging check, workflow validator
-│   ├── photo/                      # validate_cards, render_cards
-│   ├── audit/                      # reconcile_numbers, ocr_cards, web_third_check, db_cross_validate
-│   ├── db/                         # queries (read), index_run (write)
-│   ├── web/                        # search-only
-│   └── io/                         # run_dir bootstrap, log_incident digest
-│
-├── skills_repo/                    # git submodules — SHA-pinned upstream skills
-│   ├── er/                         # Equity Research Skill (P1..P6)
-│   └── ep/                         # Equity Photo Skill (P7..P11)
-│
-├── db/
-│   ├── equity_kb.sqlite            # gitignored runtime; built from db/schema/
-│   ├── schema/00X_*.sql            # numbered, additive migrations
-│   ├── seed/                       # optional fixture data
-│   └── sector_reports/             # gitignored, regenerated on demand
-│
-├── tests/                          # pytest suite (PII regression, migrations, reconcile, etc.)
-└── output/                         # gitignored runtime — one folder per run
-    └── {Company}_{Date}_{RunID}/   # see references/run_artifacts.md
-```
+`skills_repo/` is present but **empty** — there are no SHA-pinned `er`/`ep` submodules checked out and no `.gitmodules` in this fork. Tests that depend on the `ep` (Equity Photo) submodule skip themselves when it is absent.
 
 ---
 
-## Quick start
+## Tests
 
 ```bash
-git clone <this-repo-url> stack-anamnesis
-cd stack-anamnesis
-git submodule update --init --recursive    # pull ER + EP submodules (SHA-pinned)
-pip install -r requirements.txt
-python anamnesis.py init                   # build db/equity_kb.sqlite from db/schema/
-cp USER.md.template USER.md                # then edit defaults
-
-# Open the project in Claude Code (or any host that auto-discovers .claude/skills/),
-# then type:  研究一下苹果   (or)   research Apple
-#
-# The skill auto-triggers, the harness reads INCIDENTS.md (P_INCIDENT_PRECHECK), walks
-# the four P0 gates, runs the research and card pipelines, fires red-team attackers at
-# P5.7 and P10.7, audits via P12, re-checks INCIDENTS at P_INCIDENT_POSTCHECK, and lands
-# a per-run output folder + DB rows.
+python3 -m pytest -q
 ```
 
-When a new failure mode happens, capture it as a permanent rule:
-
-```
-/log-incident P0_palette gate skipped — orchestrator picked default in auto mode
-```
-
-The model will pull the latest run's digest, draft a candidate `INCIDENTS.md` entry matching the existing format, and show it to you for review. After your confirmation, it appends to `INCIDENTS.md` — and from the next session on, that rule is frozen into the system prompt and post-checked at delivery.
-
----
-
-## What this repo produces
-
-Stack Anamnesis applies the pattern to a **33-phase pipeline** that fuses two upstream skills:
-
-- **Equity Research** — multi-agent research → interactive HTML report (locked SHA256-pinned template; no simplified bypass per `INCIDENTS.md` I-002)
-- **Equity Photo** — HTML → 6 fixed-layout PNG social cards (2160×2700, palette-locked)
-
-into one end-to-end workflow with a SQLite knowledge base, a four-layer post-card audit, and red-team adversaries at the report and card stages.
-
-**One prompt → full delivery.** Type `研究一下苹果` (or `research Apple`); the harness:
-
-1. Reads `INCIDENTS.md` end-to-end (`P_INCIDENT_PRECHECK`)
-2. Walks the four P0 gates (intent, language, SEC email if US-listed, palette) — interactive gates halt and wait; auto mode does not waive them (per I-001)
-3. Runs the research pipeline (financials / macro / news in parallel, edge insight, financial analysis, prediction waterfall, QC peers, Porter analysis, cross-validation)
-4. Writes the HTML report by filling the locked skeleton; data validator clears it; **red team falsifies it** (`P5_7_RED_TEAM`)
-5. Builds 6 cards (logo ≥840 px, content, hardcode audit, layout fill, validators 1 and 2); **red team falsifies them pre-render** (`P10_7_RED_TEAM`)
-6. Renders 6 PNGs at 2160×2700; runs the four-layer P12 audit (numerical reconciliation + OCR + web third-check + DB cross-validation)
-7. Re-checks `INCIDENTS.md` (`P_INCIDENT_POSTCHECK`) — flagged blocks DB write
-8. Lands a per-run output folder with research JSON, HTML report, 6 PNG cards, QA report, validation JSONs, and DB rows
-
-For the visual diagram see `references/workflow_diagram.md`. For the prose phase narrative see `references/phase_contract.md`. For the machine contract see `workflow_meta.json`.
-
----
-
-## Cross-quarter and cross-company reuse
-
-After a few runs, the database lets you:
-
-- **Skip macro re-collection** — if a run for *any* US-listed company in 2026Q2 has already collected the 6-factor US macro vector, the next 14 days of US runs short-circuit `macro_scanner` and pull from DB.
-- **Cross-validate against history** — running Apple in Q3 will compare the new financials against Apple's Q1/Q2 rows already in DB; YoY > 5pp delta from reported flags as CRITICAL.
-- **Cross-validate against peers** — Apple's Porter `rivalry=3` while Samsung (DB) is `5`: P12 flags as a peer-divergence warning.
-- **Generate sector reports** — `python tools/db/sector_report.py --type porter_heatmap --sector "Information Technology" --period 2026Q2` produces a force × peer matrix HTML+JSON.
-
----
-
-## Privacy
-
-- SEC EDGAR User-Agent emails are never persisted. They live for the duration of one HTTP request only.
-- `tests/test_db_pii.py` asserts that no row in any TEXT column matches an email regex after a known-input fixture run.
-
----
-
-## Status
-
-The machine-readable orchestration contract is `workflow_meta.json` (33 phases, gates, tools, agents). Upstream skills (`skills_repo/er`, `skills_repo/ep`) are pinned by SHA via `.gitmodules`; submodule bumps are deliberate and logged in `meta/submodule_shas.json` per run. Pre-check and post-check are non-skippable; `P_DB_INDEX` declares `requires: [P12_final_audit, P_INCIDENT_POSTCHECK]` so machine-readable runners cannot bypass either gate.
+The crypto pipeline (`tests/analysis_layer/`) and the inherited equity suite both run. A few inherited tests are guarded behind skips where their prerequisite is not present in this fork — the photo-card tests skip when the `ep` submodule is not checked out, and one incident-coverage test skips while `INCIDENTS.md` is an empty scaffold (see TD-039 in `references/TODO.md`). Everything else passes.
 
 ---
 
 ## License
 
-Apache-2.0, matching both upstream skills.
+Apache-2.0.
