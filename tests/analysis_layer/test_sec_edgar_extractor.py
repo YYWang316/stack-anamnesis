@@ -188,6 +188,142 @@ def test_missing_raw_response_returns_none():
 
 
 # --------------------------------------------------------------------------- #
+# latest_annual — DATA-DRIVEN latest-consistent-FY selection (TD-037)
+# --------------------------------------------------------------------------- #
+def _annual_flow(concept, rows):
+    """A facts dict for one duration concept; rows = list of (start,end,val,fp,filed,accn)."""
+    return {"us-gaap": {concept: {"units": {"USD": [
+        _row(s, e, v, int(e[:4]), fp, "10-K", None, a, f) for (s, e, v, fp, f, a) in rows
+    ]}}}}
+
+
+def _annual_instant(concept, rows):
+    """A facts dict for one instant concept; rows = list of (end,val,fp,filed,accn)."""
+    return {"us-gaap": {concept: {"units": {"USD": [
+        _row(None, e, v, int(e[:4]), fp, "10-K", None, a, f) for (e, v, fp, f, a) in rows
+    ]}}}}
+
+
+def test_latest_annual_picks_most_recent_year_not_an_older_one():
+    # Two annual FY rows + a quarterly row; the FY selector must return the
+    # NEWEST full year (2025), never the older comparative (2024) or the quarter.
+    facts = _annual_flow("Revenues", [
+        ("2024-01-01", "2024-12-31", 1_676_253_000, "FY", "2026-03-09", "a24"),
+        ("2025-01-01", "2025-12-31", 2_746_642_000, "FY", "2026-03-09", "a25"),
+        ("2025-07-01", "2025-09-30",   739_759_000, "Q3", "2025-11-12", "aq3"),
+    ])
+    fact = sec_edgar.latest_annual(_envelope(facts), "Revenues", kind="duration")
+    assert fact is not None
+    assert fact.value == 2_746_642_000        # FY2025, not FY2024's 1.676B
+    assert fact.period_end == "2025-12-31"
+    assert fact.fy == "FY2025"
+
+
+def test_latest_annual_flow_vs_instant():
+    # A flow concept resolves as a ~1-year DURATION; an instant concept resolves
+    # at the fiscal-year-end POINT (start=None). Each kind ignores the other's row.
+    flow = sec_edgar.latest_annual(
+        _envelope(_annual_flow("NetIncomeLoss", [
+            ("2025-01-01", "2025-12-31", -69_508_000, "FY", "2026-03-09", "a25"),
+        ])), "NetIncomeLoss", kind="duration")
+    assert flow is not None and flow.value == -69_508_000   # the LOSS
+
+    inst = sec_edgar.latest_annual(
+        _envelope(_annual_instant("Assets", [
+            ("2024-12-31", 45_834_409_000, "FY", "2026-03-09", "a24"),
+            ("2025-12-31", 78_713_207_000, "FY", "2026-03-09", "a25"),
+        ])), "Assets", kind="instant")
+    assert inst is not None and inst.value == 78_713_207_000 and inst.period_end == "2025-12-31"
+
+    # asking for the WRONG kind finds no matching row -> None (rule 1)
+    assert sec_edgar.latest_annual(
+        _envelope(_annual_instant("Assets", [
+            ("2025-12-31", 78_713_207_000, "FY", "2026-03-09", "a25")])),
+        "Assets", kind="duration") is None
+
+
+def test_latest_annual_restatement_tie_broken_by_latest_filed():
+    # Same period END (2025-12-31) reported twice; pick the latest-filed restatement.
+    facts = _annual_flow("Revenues", [
+        ("2025-01-01", "2025-12-31", 2_700_000_000, "FY", "2026-02-01", "orig"),
+        ("2025-01-01", "2025-12-31", 2_746_642_000, "FY", "2026-03-09", "amend"),
+    ])
+    fact = sec_edgar.latest_annual(_envelope(facts), "Revenues", kind="duration")
+    assert fact.value == 2_746_642_000        # restated
+    assert fact.filed == "2026-03-09" and fact.accn == "amend"
+
+
+def test_latest_annual_concept_alias_priority():
+    # Revenue under alias A (FY2025) and alias B (FY2024). First alias WITH data
+    # wins -> A's FY2025, even though B exists.
+    facts = {"us-gaap": {
+        "RevenueFromContractWithCustomerExcludingAssessedTax": {"units": {"USD": [
+            _row("2025-01-01", "2025-12-31", 2_746_642_000, 2025, "FY", "10-K",
+                 None, "aA", "2026-03-09")]}},
+        "Revenues": {"units": {"USD": [
+            _row("2024-01-01", "2024-12-31", 1_676_253_000, 2024, "FY", "10-K",
+                 None, "aB", "2025-03-01")]}},
+    }}
+    fact = sec_edgar.latest_annual(
+        _envelope(facts),
+        ("RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues"),
+        kind="duration")
+    assert fact.value == 2_746_642_000
+    assert fact.concept == "RevenueFromContractWithCustomerExcludingAssessedTax"
+    assert fact.fy == "FY2025"
+
+    # first alias absent -> falls through to the next alias that HAS data
+    fact2 = sec_edgar.latest_annual(
+        _envelope(facts), ("NotAConcept", "Revenues"), kind="duration")
+    assert fact2 is not None and fact2.concept == "Revenues"
+
+
+def test_latest_annual_missing_concept_returns_none():
+    assert sec_edgar.latest_annual(_envelope(MOCK_FACTS), "NotAConcept") is None
+    assert sec_edgar.latest_annual({"subject": "x"}, "Revenues") is None
+    # bad kind -> None, never throws
+    assert sec_edgar.latest_annual(_envelope(MOCK_FACTS), "Revenues", kind="bogus") is None
+
+
+def test_extract_annual_fact_wraps_as_extracted_value():
+    facts = _annual_instant("StockholdersEquity", [
+        ("2024-12-31",   570_529_000, "FY", "2026-03-09", "a24"),
+        ("2025-12-31", 3_329_327_000, "FY", "2026-03-09", "a25"),
+    ])
+    ev = sec_edgar.extract_annual_fact(
+        _envelope(facts), "StockholdersEquity", "StockholdersEquity", kind="instant")
+    assert isinstance(ev, ExtractedValue)
+    assert ev.metric == "StockholdersEquity"          # stable label
+    assert ev.value == 3_329_327_000                  # FY2025, not FY2024's 570.5M
+    assert ev.as_of == "2025-12-31"                   # period END
+    assert ev.provenance["fiscal_period"] == "FY2025"
+    assert ev.provenance["kind"] == "instant"
+    # no annual data -> None
+    assert sec_edgar.extract_annual_fact(
+        _envelope(facts), "X", "NotAConcept", kind="instant") is None
+
+
+# --------------------------------------------------------------------------- #
+# latest_annual — real Circle envelope (the GROUND-TRUTH FY2025 anchor, TD-037)
+# --------------------------------------------------------------------------- #
+def test_real_envelope_latest_annual_is_fy2025_consistent():
+    env = _latest_circle_envelope()
+    specs = [
+        ("Revenues", ("Revenues",), "duration", 2_746_642_000),
+        ("NetIncomeLoss", ("NetIncomeLoss",), "duration", -69_508_000),
+        ("Assets", ("Assets",), "instant", 78_713_207_000),
+        ("Liabilities", ("Liabilities",), "instant", 75_382_434_000),
+        ("StockholdersEquity", ("StockholdersEquity",), "instant", 3_329_327_000),
+    ]
+    for metric, aliases, kind, expected in specs:
+        fact = sec_edgar.latest_annual(env, aliases, kind=kind)
+        assert fact is not None, metric
+        assert fact.value == expected, f"{metric}: {fact.value} != {expected}"
+        assert fact.period_end == "2025-12-31", metric   # all the SAME latest year
+        assert fact.fy == "FY2025", metric
+
+
+# --------------------------------------------------------------------------- #
 # list_filings
 # --------------------------------------------------------------------------- #
 def test_list_filings_filters_by_form():

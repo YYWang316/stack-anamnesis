@@ -748,6 +748,26 @@ Per-metric table (scope noted):
 
 ---
 
+## TD-037 — SEC issuer-financials period selection fixed (mixed/stale FY → latest-consistent FY)
+
+**Status:** active 2026-06-02 (fixed in B.2.10b — a bug in the B.2.10 orchestrator's sec_edgar wiring, TD-036).
+
+**The bug.** The orchestrator pulled a FIXED set of `(concept, fy, fp)` pairs through `get_xbrl_value` (which resolves them by SEC `frame`). The hardcoded years landed MIXED — Assets/Liabilities FY2025 but Revenues/NetIncome/StockholdersEquity FY2024 — and worse, surfaced FY2024's PROFIT (+$155.7M) and equity ($570.5M) when the latest full year FY2025 was a LOSS (−$69.5M) with equity $3.329B. The same envelope HELD the FY2025 figures (the 2026-05-27 manual draft used them); naming a fixed period silently froze a stale year and masked Circle's swing-to-loss.
+
+**The fix — data-driven latest-annual selection.** New `analysis_layer/extractors/sec_edgar.py::latest_annual(envelope, concept_or_aliases, kind="duration"|"instant") -> AnnualFact | None` (+ `extract_annual_fact` wrapping it as an `ExtractedValue`). NO hardcoded frame/fy: it reads the concept's annual rows and picks the most recent. The orchestrator's `_SEC_FACTS` is now `(metric_label, concept-alias-priority, kind)` and calls the selector per fact, so all five come from the SAME latest fiscal year (FY2025 / 2025-12-31): Revenues $2.747B, NetIncomeLoss −$69.5M, Assets $78.71B, Liabilities $75.38B, StockholdersEquity $3.329B.
+
+**★ Three gotchas the selector encodes (TD-023 — grounded against `meta/raw/sec_edgar/circle_*.json`):**
+* **"Annual" = `fp == "FY"`, not a frame.** The 10-K's annual-period tag is the robust marker (independent of whether a `frame` string is present); the prior-year comparatives a 10-K restates also carry `fp=FY` — fine, we pick the most-recent period END.
+* **Flow vs instant.** A FLOW (Revenues, NetIncomeLoss) is a ~1-year DURATION (`start`→`end`, span > 300d); a STOCK (Assets, Liabilities, StockholdersEquity) is an INSTANT at fiscal-year-end (`start` is None). `kind` selects which; asking the wrong kind finds no row → None.
+* **Restatement tie-break.** A period END reported in multiple filings (original + restated, and the next year's 10-Q comparative) → pick latest `filed`, then `accn` (same authority rule as `get_xbrl_value`).
+* **Concept-alias priority.** Issuers can move a metric between us-gaap concepts across years (revenue-concept-switch). The selector takes an ordered alias list; first alias WITH annual data wins. For Circle, `Revenues` carries both years → $2.747B; the alias list still guards future filings.
+
+**Verified.** `tests/analysis_layer/test_sec_edgar_extractor.py` (synthetic companyfacts): latest_annual picks the newest year not an older comparative/quarter; flow-vs-instant (incl. wrong-kind → None); restatement tie → latest filed; concept-alias priority (first-with-data wins; falls through when absent); null-guards; `extract_annual_fact` wraps with `as_of` = period end + `fiscal_period` label; plus a real-envelope GROUND-TRUTH anchor (all 5 = FY2025 / 2025-12-31, NetIncome = the loss). `tests/analysis_layer/test_orchestrate.py`: the report's 5 SEC facts all dated 2025-12-31, the FY2025 numbers present (LOSS visible), the stale FY2024 values gone. `get_xbrl_value` and its tests untouched (left in place — it answers a NAMED-period query; `latest_annual` answers a latest-period query). Full suite: same 4 pre-existing failures, no new ones.
+
+**Out of scope (deferred):** non-calendar fiscal-year filers (Circle is 12-31; a non-calendar issuer needs fy→calendar mapping); auto-pairing each flow with its prior-year value for a YoY delta (only the latest year is surfaced); a multi-year mini history.
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.

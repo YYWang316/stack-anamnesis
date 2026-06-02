@@ -48,8 +48,9 @@ A documented geometry fallback (period dates, no frame) covers rows whose
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
-from typing import Any, List, Mapping, Optional
+from typing import Any, List, Mapping, Optional, Sequence, Tuple, Union
 
 from analysis_layer.contract import ExtractedValue
 
@@ -268,6 +269,158 @@ def get_xbrl_value(
             "filed": row.get("filed"),
             "unit": unit,
             "dedup_candidates": len(matched),
+            "fetched_at": envelope.get("fetched_at"),
+        },
+    )
+
+
+# --------------------------------------------------------------------------- #
+# DATA-DRIVEN latest-annual selection (TD-037)
+# --------------------------------------------------------------------------- #
+# ``get_xbrl_value`` above answers "give me concept C at the period I name". The
+# orchestrator instead needs "give me the LATEST full fiscal year present" so all
+# issuer financials come from ONE consistent year — naming a fixed (fy, fp) per
+# concept silently mixed years and surfaced a stale FY (masking Circle's
+# swing-to-loss). ``latest_annual`` is that data-driven selector: no hardcoded
+# frame / fy — it reads the concept's annual rows and picks the most recent one.
+#
+# "Annual" is identified by the SEC ``fp == "FY"`` tag (the annual-period marker
+# the 10-K carries) — NOT by ``frame``, so it never depends on a pre-known frame
+# string. A flow concept (Revenues, NetIncomeLoss) is a ~1-year DURATION
+# (start→end); a stock concept (Assets, Liabilities, StockholdersEquity) is an
+# INSTANT at fiscal-year-end (no ``start``). The 10-K restates prior years as
+# comparatives (same period END, different ``filed``) — we pick the most recent
+# period end, breaking ties on latest ``filed`` then ``accn`` (the same
+# authority rule as ``get_xbrl_value``). A concept-ALIAS priority list covers
+# issuers that move a metric between us-gaap concepts across years (the
+# revenue-concept-switch case): the first alias that has annual data wins.
+@dataclass(frozen=True)
+class AnnualFact:
+    """One concept's value for the latest full fiscal year present in an envelope."""
+
+    concept: str       # the alias that actually carried the data
+    taxonomy: str      # "us-gaap" / "dei"
+    value: float
+    unit: str          # "USD" / "shares" / …
+    period_end: str    # ISO date, e.g. "2025-12-31"
+    fy: str            # human label derived from period_end, e.g. "FY2025"
+    form: Optional[str]
+    filed: Optional[str]
+    accn: Optional[str]
+
+
+def _is_annual_row(row: Mapping[str, Any], kind: str) -> bool:
+    """True if ``row`` is a full-fiscal-year row of the requested ``kind``.
+
+    Annual is marked by ``fp == "FY"`` (the 10-K's annual-period tag — robust to
+    absent ``frame``). ``kind="duration"`` wants a ~1-year flow span (``start`` →
+    ``end``); ``kind="instant"`` wants a balance-sheet point (no ``start``).
+    """
+    if str(row.get("fp") or "").upper() != "FY":
+        return False
+    end = _parse_date(row.get("end"))
+    if end is None:
+        return False
+    start = _parse_date(row.get("start"))
+    if kind == "instant":
+        return start is None
+    if start is None:                       # duration needs a real span
+        return False
+    return (end - start).days > 300         # ~1-year, not a stub/partial
+
+
+def _annual_sort_key(item: Tuple[Mapping[str, Any], str]):
+    """Order annual rows: most recent period END, then latest ``filed``, ``accn``."""
+    row, _unit = item
+    end = _parse_date(row.get("end")) or date.min
+    return (end, str(row.get("filed") or ""), str(row.get("accn") or ""))
+
+
+def latest_annual(
+    envelope: Mapping[str, Any],
+    concept_or_aliases: Union[str, Sequence[str]],
+    kind: str = "duration",
+) -> Optional[AnnualFact]:
+    """The latest full-fiscal-year value for a concept (or its alias priority).
+
+    Parameters
+    ----------
+    concept_or_aliases : a concept name, or an ordered priority list — the first
+        alias that has any annual data wins (the revenue-concept-switch case).
+    kind : ``"duration"`` (flow: annual span) or ``"instant"`` (stock: year-end).
+
+    Returns an ``AnnualFact`` for the most recent annual period present, or None
+    if no alias has a usable annual row (rule 1: never throws). NB: NO hardcoded
+    frame/fy — the period is whatever the data's latest annual row carries.
+    """
+    aliases: Tuple[str, ...] = (
+        (concept_or_aliases,) if isinstance(concept_or_aliases, str)
+        else tuple(concept_or_aliases)
+    )
+    if kind not in ("duration", "instant"):
+        return None
+
+    for concept in aliases:
+        found = _concept_units(envelope, concept)
+        if found is None:
+            continue
+        taxonomy, units = found
+        rows: List[Tuple[Mapping[str, Any], str]] = []
+        for unit, urows in units.items():
+            if not isinstance(urows, list):
+                continue
+            for r in urows:
+                if isinstance(r, Mapping) and _is_annual_row(r, kind):
+                    rows.append((r, unit))
+        if not rows:
+            continue
+
+        row, unit = max(rows, key=_annual_sort_key)
+        value = row.get("val")
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            continue
+        end = str(row.get("end"))
+        return AnnualFact(
+            concept=concept, taxonomy=taxonomy, value=value, unit=unit,
+            period_end=end, fy=f"FY{end[:4]}", form=row.get("form"),
+            filed=row.get("filed"), accn=row.get("accn"),
+        )
+    return None
+
+
+def extract_annual_fact(
+    envelope: Mapping[str, Any],
+    metric: str,
+    concept_or_aliases: Union[str, Sequence[str]],
+    kind: str = "duration",
+) -> Optional[ExtractedValue]:
+    """``latest_annual`` wrapped as an ``ExtractedValue`` for the analysis trunk.
+
+    ``metric`` is the stable label used downstream (kept constant regardless of
+    which alias matched, so the Evidence Table reads consistently). ``as_of`` is
+    the fiscal PERIOD END (the period the number describes — same contract as
+    ``get_xbrl_value``); the human fiscal-period label (e.g. ``"FY2025"``) is
+    carried in ``provenance`` so the report reads clearly. None if no annual data.
+    """
+    fact = latest_annual(envelope, concept_or_aliases, kind)
+    if fact is None:
+        return None
+    return ExtractedValue(
+        metric=metric,
+        value=fact.value,
+        unit=fact.unit,
+        source=SOURCE,
+        subject=envelope.get("subject"),
+        as_of=fact.period_end,          # fiscal period END, not fetched_at
+        provenance={
+            "taxonomy": fact.taxonomy,
+            "concept": fact.concept,    # the alias that actually carried the data
+            "fiscal_period": fact.fy,   # human label, e.g. "FY2025"
+            "period_end": fact.period_end,
+            "kind": kind,
+            "form": fact.form,
+            "filed": fact.filed,
+            "accn": fact.accn,
             "fetched_at": envelope.get("fetched_at"),
         },
     )

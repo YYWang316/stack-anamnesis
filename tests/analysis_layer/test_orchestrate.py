@@ -83,6 +83,23 @@ def test_real_usdc_end_to_end(tmp_path, capsys):
     assert "sec_edgar" in table
     assert "Revenues" in table and "Assets" in table
 
+    # ---- TD-037: the Circle facts are the latest CONSISTENT fiscal year ----- #
+    # (data-driven selection, not a mixed/stale set). Ground truth = the
+    # 2026-05-27 manual draft off the SAME envelope: FY2025, 2025-12-31.
+    sec_rows = [r for r in table.splitlines() if "sec_edgar" in r]
+    assert len(sec_rows) == 5
+    # every SEC fact dated to the same latest fiscal-year end — no mixed years
+    assert all("2025-12-31" in r for r in sec_rows), sec_rows
+    # the swing-to-loss is now visible, and the right-year flows/stocks land
+    assert "-69508000" in table      # NetIncomeLoss FY2025 = LOSS (was +155.7M FY2024)
+    assert "2746642000" in table     # Revenues FY2025 $2.747B (was $1.676B FY2024)
+    assert "3329327000" in table     # StockholdersEquity FY2025 $3.329B (was $570.5M)
+    assert "78713207000" in table    # Assets $78.71B (already correct)
+    assert "75382434000" in table    # Liabilities $75.38B (already correct)
+    # the stale FY2024 values must be GONE
+    assert "155667000" not in table and "1676253000" not in table
+    assert "570529000" not in table
+
     with capsys.disabled():
         print(f"\n=== orchestrate e2e: {path.relative_to(ROOT) if path.is_relative_to(ROOT) else path} ===")
         print("clean stablecoin report + sec_edgar Circle facts present")

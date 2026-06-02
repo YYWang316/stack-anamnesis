@@ -54,18 +54,28 @@ DEFAULT_OUT_DIR = "meta/reports"
 # --------------------------------------------------------------------------- #
 # SEC facts pulled for an issuer-backed subject
 # --------------------------------------------------------------------------- #
-# (concept, fy, fp) XBRL facts read from the issuer's SEC company-facts envelope.
-# Each (fy, fp) resolves to a SEC ``frame`` present in Circle's real envelope
-# (TD-023: grounded against meta/raw/sec_edgar/*.json — Revenues→CY2024,
-# Assets/Liabilities→CY{fy}Q4I instant, NetIncomeLoss→CY2024, StockholdersEquity
-# →CY{fy}Q4I). These land in the Evidence Table (no [AUTO] slot maps to them),
-# surfacing the issuer's regulated financials alongside the on-chain metrics.
+# (metric label, concept-alias priority, kind) XBRL facts read from the issuer's
+# SEC company-facts envelope. DATA-DRIVEN period selection (TD-037): instead of
+# naming a fixed (fy, fp)/frame per concept — which silently mixed fiscal years
+# and surfaced a STALE year (FY2024's profit, masking Circle's FY2025 swing-to-
+# loss) — each fact is pulled via ``sec_edgar.latest_annual``, which picks the
+# LATEST full fiscal year present. So all five come from the SAME most-recent year.
+#   * ``kind="duration"`` = a FLOW (annual span): Revenues, NetIncomeLoss.
+#   * ``kind="instant"``  = a STOCK (fiscal-year-end point): Assets, Liabilities,
+#     StockholdersEquity.
+#   * Revenue lists an alias priority for the concept-switch case (an issuer may
+#     move revenue between us-gaap concepts across years); first alias with annual
+#     data wins. For Circle, ``Revenues`` carries both years -> $2.747B (FY2025).
+# These land in the Evidence Table (no [AUTO] slot maps to them), surfacing the
+# issuer's regulated financials alongside the on-chain metrics.
 _SEC_FACTS = (
-    ("Revenues", 2024, "FY"),
-    ("Assets", 2025, "FY"),
-    ("Liabilities", 2025, "FY"),
-    ("NetIncomeLoss", 2024, "FY"),
-    ("StockholdersEquity", 2024, "FY"),
+    ("Revenues",
+     ("Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax"),
+     "duration"),
+    ("NetIncomeLoss", ("NetIncomeLoss",), "duration"),
+    ("Assets", ("Assets",), "instant"),
+    ("Liabilities", ("Liabilities",), "instant"),
+    ("StockholdersEquity", ("StockholdersEquity",), "instant"),
 )
 
 
@@ -102,8 +112,8 @@ def _defillama_values(env: Mapping, sref: SubjectRef) -> List[ExtractedValue]:
 
 def _sec_edgar_values(env: Mapping, sref: SubjectRef) -> List[ExtractedValue]:
     out: List[ExtractedValue] = []
-    for concept, fy, fp in _SEC_FACTS:
-        ev = sec_edgar.get_xbrl_value(env, concept, fy, fp)
+    for metric, aliases, kind in _SEC_FACTS:
+        ev = sec_edgar.extract_annual_fact(env, metric, aliases, kind)
         if ev is not None:
             out.append(ev)
     return out
