@@ -1,0 +1,438 @@
+"""The markdown template filler (B.2.8) — FINAL stage of the analysis-layer
+trunk (extractor -> resolver -> aggregator -> filler).
+
+``fill`` consumes the aggregator's ``ReconciledValue``s (trustworthy values +
+confidence signals) and drops them into the research template's ``[AUTO]`` slots,
+builds a data-layer Evidence Table (value · source · confidence), and leaves
+``[SEMI-AUTO]`` / ``[MANUAL]`` slots FLAGGED for a human. The output is an
+objective research markdown — NO YYFoundry brand voice (that lives in a separate
+layer and stays OUT of the deliverable).
+
+THE CARDINAL FAITHFULNESS RULE (QC integrity):
+  * ONLY ``[AUTO]`` slots get auto-filled, and only with a real reconciled value.
+  * ``[SEMI-AUTO]`` -> a visibly-flagged "needs human review" placeholder (a
+    drafted suggestion is allowed only if flagged, never presented as final).
+  * ``[MANUAL]`` -> placeholder left intact, flagged.
+  * An ``[AUTO]`` slot with NO matching reconciled value stays flagged — we never
+    fabricate a number, source, or claim for a slot the data doesn't cover.
+  * A reconciled value with NO template slot is NOT dropped silently — it lands in
+    the Evidence Table with a "no matching slot" note.
+
+Two carry-over rules from the B.2.7 aggregator:
+  a. SCOPE LABEL — scope is shown ONLY where it is a real fact (the two supply
+     scopes: single-chain Ethereum-only vs cross-chain multi_chain). It is NEVER
+     printed on price / market_cap / volume / rank, even though those carry a
+     ``multi_chain`` tag internally.
+  b. UNIT — every value renders with its OWN unit; when a cross-check compared two
+     different units (DefiLlama circulating_supply is USD-peg vs CMC's tokens) the
+     Evidence Table notes the mismatch rather than implying same-unit.
+
+PURE: ``fill`` does no I/O and is deterministic — it derives the report date from
+the data's own ``as_of`` timestamps, never the wall clock. A thin I/O wrapper
+(``fill_template_file``) is provided for convenience but the core is testable on a
+template string. This module does NOT import the extractors or the aggregator (the
+caller wires the chain). OUT OF SCOPE: the orchestrator / front-door gate, B.3 web
+third-source / red-team checks, and md->HTML / cards / DB (B.4+).
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Dict, List, Mapping, Optional, Tuple
+
+from analysis_layer.contract import ReconciledValue, SubjectRef
+
+# --------------------------------------------------------------------------- #
+# constants
+# --------------------------------------------------------------------------- #
+# Supply is the ONLY metric family that carries a meaningful scope split
+# (single-chain Ethereum-only vs cross-chain aggregate). Scope is shown for these
+# and suppressed everywhere else (carry-over rule a).
+_SUPPLY_METRICS = frozenset({"total_supply", "circulating_supply"})
+
+# agreement -> (confidence label, human note). Mirrors the template's H/M/L scale.
+_CONFIDENCE: Dict[str, Tuple[str, str]] = {
+    "agree": ("High", "cross-checked, within tolerance band"),
+    "single_source": ("Medium", "single source — unverified"),
+    "divergence": ("Low", "FLAG — a cross-check fell outside the band"),
+}
+
+# Human scope labels for the supply sub-bullets.
+_SCOPE_HUMAN = {
+    "single-chain": "single-chain",   # refined with the chain name when known
+    "multi_chain": "cross-chain (multi_chain)",
+}
+
+# Sort order so a slot lists single-chain (Ethereum-only) before the cross-chain
+# aggregate, and within a scope total_supply before circulating_supply.
+_SCOPE_SORT = {"single-chain": 0, "multi_chain": 1, None: 2}
+
+# Markers we recognise. SEMI-AUTO first so the alternation never mis-binds it to
+# AUTO. A marker whose body still holds an angle-bracket placeholder (``<source>``)
+# is a LEGEND/format definition, not a real slot — skipped (see ``_iter_marker``).
+_MARKER_RE = re.compile(r"\[(SEMI-AUTO|MANUAL|AUTO):\s*([^\]]*)\]")
+
+_ANY_SCOPE = "__ANY__"
+
+
+# --------------------------------------------------------------------------- #
+# slot registry — maps an [AUTO] marker line to the (metric, scope) facts it
+# should hold. Matching is by stable keyword anchors present in the template
+# prose; the FIRST spec whose keywords ALL appear in the (lowercased) line claims
+# it. Order: most specific first. Adding a slot is a DATA edit here.
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class SlotSpec:
+    name: str
+    keywords: Tuple[str, ...]          # all must appear in the lowercased line
+    metrics: Tuple[str, ...]           # metrics this slot accepts
+    scope: str = _ANY_SCOPE            # exact scope, or _ANY_SCOPE
+
+    def matches_line(self, line_lower: str) -> bool:
+        return all(k in line_lower for k in self.keywords)
+
+    def accepts(self, rv: ReconciledValue) -> bool:
+        if rv.metric not in self.metrics:
+            return False
+        return self.scope == _ANY_SCOPE or rv.scope == self.scope
+
+
+SLOTS: Tuple[SlotSpec, ...] = (
+    # explicit per-scope supply slots (for templates that split the two scopes)
+    SlotSpec("supply_eth", ("supply", "ethereum"), ("total_supply",), "single-chain"),
+    SlotSpec("supply_single", ("supply", "single-chain"), ("total_supply",), "single-chain"),
+    SlotSpec("supply_cross", ("supply", "cross-chain"), ("total_supply",), "multi_chain"),
+    # combined stablecoin-supply slot (the real v1.2 template line) — holds BOTH
+    # supply scopes + circulating supply, each rendered as a distinct sub-bullet.
+    SlotSpec("stablecoin_supply", ("stablecoin supply",),
+             ("total_supply", "circulating_supply"), _ANY_SCOPE),
+    SlotSpec("circulating_supply", ("circulating supply",), ("circulating_supply",), _ANY_SCOPE),
+    SlotSpec("total_supply", ("total supply",), ("total_supply",), _ANY_SCOPE),
+    # market-data slots (present in token-centric templates; absent in v1.2)
+    SlotSpec("market_cap_rank", ("market cap rank",), ("market_cap_rank",), _ANY_SCOPE),
+    SlotSpec("market_cap", ("market cap",), ("market_cap",), _ANY_SCOPE),
+    SlotSpec("price", ("price",), ("price",), _ANY_SCOPE),
+    SlotSpec("volume_24h", ("24h volume",), ("volume_24h",), _ANY_SCOPE),
+    SlotSpec("tvl", ("tvl",), ("tvl",), _ANY_SCOPE),
+)
+
+
+# --------------------------------------------------------------------------- #
+# value rendering
+# --------------------------------------------------------------------------- #
+def _magnitude(value: float) -> Tuple[float, str]:
+    """Scale a number into (mantissa, suffix) — T/B/M/K — for human display."""
+    a = abs(value)
+    if a >= 1e12:
+        return value / 1e12, "T"
+    if a >= 1e9:
+        return value / 1e9, "B"
+    if a >= 1e6:
+        return value / 1e6, "M"
+    if a >= 1e3:
+        return value / 1e3, "K"
+    return value, ""
+
+
+def render_value(rv: ReconciledValue, subject_ref: Optional[SubjectRef]) -> str:
+    """Human-readable rendering of a reconciled value, per its own unit.
+
+    USD amounts -> ``$76.39B`` (or ``$0.9997`` for sub-$1000 price-like values);
+    token counts -> ``52.57B USDC`` (the subject names the token); ordinal counts
+    (rank) -> ``#6``. Full precision is preserved in the Evidence Table, never
+    here.
+    """
+    value = rv.value
+    unit = rv.unit
+    symbol = subject_ref.subject if subject_ref is not None else (rv.metric or "")
+
+    if unit == "count" or rv.metric == "market_cap_rank":
+        return f"#{int(value)}"
+
+    if unit == "USD":
+        if abs(value) < 1000:               # price-like — keep 4 decimals
+            return f"${value:,.4f}"
+        scaled, suffix = _magnitude(value)
+        return f"${scaled:,.2f}{suffix}"
+
+    if unit == "tokens":
+        if abs(value) < 1000:
+            return f"{value:,.2f} {symbol}".rstrip()
+        scaled, suffix = _magnitude(value)
+        return f"{scaled:,.2f}{suffix} {symbol}".rstrip()
+
+    # unknown unit -> faithful "value unit" (never silently drop the unit)
+    return f"{value} {unit}"
+
+
+def _chain_of(rv: ReconciledValue) -> Optional[str]:
+    """The chain name a single-chain supply read came from (Etherscan tags it in
+    provenance), or None. Lets the scope label read ``single-chain (ethereum)``
+    instead of a hard-coded chain."""
+    for ev in rv.inputs:
+        prov = ev.provenance if isinstance(ev.provenance, Mapping) else {}
+        chain = prov.get("chain")
+        if isinstance(chain, str) and chain and not chain.startswith("chainid"):
+            return chain
+    return None
+
+
+def _scope_label(rv: ReconciledValue) -> Optional[str]:
+    """Human scope label, ONLY for supply metrics (carry-over rule a). Non-supply
+    metrics return None so the renderer omits any scope annotation."""
+    if rv.metric not in _SUPPLY_METRICS:
+        return None
+    base = _SCOPE_HUMAN.get(rv.scope, rv.scope or "unscoped")
+    if rv.scope == "single-chain":
+        chain = _chain_of(rv)
+        if chain:
+            return f"single-chain ({chain})"
+    return base
+
+
+# --------------------------------------------------------------------------- #
+# cross-check / evidence helpers
+# --------------------------------------------------------------------------- #
+def _crosscheck_cell(rv: ReconciledValue) -> str:
+    """The Evidence-Table cross-check cell from the audit trail.
+
+    One segment per cross-check: ``vs <source> Δ<delta>% (band <band>%) ✓/✗``,
+    plus the as_of gap (single-chain) and a UNIT-MISMATCH note (carry-over rule b)
+    when the cross-check source reported a different unit than the chosen value.
+    """
+    ccs = rv.audit.get("cross_checks") if isinstance(rv.audit, Mapping) else None
+    if not ccs:
+        return "single source — unverified"
+    unit_by_source = {ev.source: ev.unit for ev in rv.inputs}
+    parts: List[str] = []
+    for cc in ccs:
+        src = cc.get("source")
+        mark = "✓" if cc.get("within_band") else "✗ DIVERGENCE"
+        seg = (f"vs {src} Δ{cc.get('delta', 0.0) * 100:.4f}% "
+               f"(band {cc.get('band', 0.0) * 100:.4f}%) {mark}")
+        if cc.get("gap_days") is not None:
+            seg += f", gap {cc['gap_days']:.2f}d"
+        other_unit = unit_by_source.get(src)
+        if other_unit and other_unit != rv.unit:
+            seg += f" [unit: {rv.unit} vs {other_unit}]"
+        parts.append(seg)
+    return "; ".join(parts)
+
+
+def build_evidence_table(
+    reconciled: List[ReconciledValue],
+    placed: "set[Tuple[str, Optional[str]]]",
+) -> str:
+    """The data-layer Evidence Table — one row per reconciled fact, full precision.
+
+    Confidence maps the aggregator's ``agreement`` signal (agree -> High,
+    single_source -> Medium/Unverified, divergence -> Low/Flag). Scope is shown
+    only for supply rows (rule a). A fact whose ``(metric, scope)`` is not in
+    ``placed`` (no matching template slot) is flagged in its notes rather than
+    dropped.
+    """
+    lines = [
+        "",
+        "## Auto Evidence Table — Data Layer `[AUTO — B.2.8 filler]`",
+        "",
+        "> One row per reconciled fact (full precision). **Confidence** maps the "
+        "aggregator's agreement signal; **Cross-check** shows each corroborating "
+        "source's relative delta vs the tolerance band from the audit trail. "
+        "Values here are the authority's actual number — never an average.",
+        "",
+        "| # | Metric | Scope | Value (exact) | Unit | Source | As of | Confidence | Cross-check / notes |",
+        "|---|--------|-------|---------------|------|--------|-------|------------|---------------------|",
+    ]
+    for i, rv in enumerate(reconciled, 1):
+        scope = rv.scope if rv.metric in _SUPPLY_METRICS else "—"
+        conf, _note = _CONFIDENCE.get(rv.agreement, ("?", rv.agreement))
+        cross = _crosscheck_cell(rv)
+        if (rv.metric, rv.scope) not in placed:
+            cross = f"{cross} · ⚠ no matching [AUTO] template slot — recorded here only"
+        as_of = (rv.as_of or "")[:19]
+        lines.append(
+            f"| {i} | {rv.metric} | {scope} | {rv.value} | {rv.unit} | "
+            f"{rv.source_used} | {as_of} | {conf} ({rv.agreement}) | {cross} |"
+        )
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
+# slot filling
+# --------------------------------------------------------------------------- #
+def _match_slot(line_lower: str) -> Optional[SlotSpec]:
+    for spec in SLOTS:
+        if spec.matches_line(line_lower):
+            return spec
+    return None
+
+
+def _slot_subbullet(rv: ReconciledValue, subject_ref: Optional[SubjectRef]) -> str:
+    """One filled sub-bullet under an [AUTO] slot."""
+    val = render_value(rv, subject_ref)
+    conf, _ = _CONFIDENCE.get(rv.agreement, ("?", ""))
+    scope_lbl = _scope_label(rv)
+    prefix = f"**{scope_lbl}** — " if scope_lbl else ""
+    as_of = (rv.as_of or "")[:10]
+    return (f"    - {prefix}{val} · source `{rv.source_used}` · as_of {as_of} "
+            f"· confidence **{conf}** ({rv.agreement})")
+
+
+def _fill_auto_line(
+    line: str,
+    marker_text: str,
+    body: str,
+    by_key: "Dict[Tuple[str, Optional[str]], ReconciledValue]",
+    placed: "set[Tuple[str, Optional[str]]]",
+    subject_ref: Optional[SubjectRef],
+) -> List[str]:
+    """Resolve a single [AUTO] marker line to filled sub-bullets or a flag."""
+    spec = _match_slot(line.lower())
+    facts: List[ReconciledValue] = []
+    if spec is not None:
+        facts = [rv for key, rv in by_key.items()
+                 if key not in placed and spec.accepts(rv)]
+        facts.sort(key=lambda rv: (_SCOPE_SORT.get(rv.scope, 9), rv.metric))
+
+    if not facts:
+        # No reconciled value for this slot -> leave the marker, flag it.
+        return [f"{line}  → ⚠ **UNFILLED [AUTO]** — no reconciled value for this "
+                f"slot (left flagged, NOT fabricated)"]
+
+    for rv in facts:
+        placed.add((rv.metric, rv.scope))
+    filled_marker = f"[AUTO ✓ FILLED: {body}]"
+    out = [line.replace(marker_text, filled_marker)]
+    out.extend(_slot_subbullet(rv, subject_ref) for rv in facts)
+    return out
+
+
+def _process_line(
+    line: str,
+    by_key: "Dict[Tuple[str, Optional[str]], ReconciledValue]",
+    placed: "set[Tuple[str, Optional[str]]]",
+    subject_ref: Optional[SubjectRef],
+) -> List[str]:
+    """Transform one template line: fill an [AUTO] slot, or flag SEMI/MANUAL."""
+    m = _MARKER_RE.search(line)
+    if m is None:
+        return [line]
+    kind, body = m.group(1), m.group(2).strip()
+    # A legend/format definition (body still holds a ``<placeholder>``) is not a
+    # real slot — leave it untouched.
+    if "<" in body:
+        return [line]
+
+    if kind == "AUTO":
+        return _fill_auto_line(line, m.group(0), body, by_key, placed, subject_ref)
+    if kind == "SEMI-AUTO":
+        return [f"{line}  → ⚠ **NEEDS HUMAN REVIEW [SEMI-AUTO]** — compute / verify "
+                f"manually before publish: {body}"]
+    # MANUAL
+    return [f"{line}  → ⚠ **MANUAL** — researcher must fill: {body}"]
+
+
+# --------------------------------------------------------------------------- #
+# header context (from SubjectRef)
+# --------------------------------------------------------------------------- #
+def _subject_ref_block(subject_ref: SubjectRef) -> str:
+    ids = " · ".join(
+        f"{k}=`{v}`" for k, v in sorted(subject_ref.identifiers.items())
+    )
+    return (
+        "> **[AUTO subject_ref]** "
+        f"subject **{subject_ref.subject}** · subject_type {subject_ref.subject_type} "
+        f"· issuer {subject_ref.issuer or '—'} · decimals {subject_ref.decimals} "
+        f"· ids: {ids}"
+    )
+
+
+def _latest_as_of(reconciled: List[ReconciledValue]) -> Optional[str]:
+    stamps = [rv.as_of for rv in reconciled if isinstance(rv.as_of, str) and rv.as_of]
+    return max(stamps)[:10] if stamps else None
+
+
+def _apply_header_context(
+    line: str, subject_ref: SubjectRef, data_date: Optional[str]
+) -> str:
+    """Fill the few clearly-labelled Part 0 identity slots from SubjectRef.
+
+    Identity bindings (title / subject type / data date) are deterministic facts,
+    not measured numbers — filling them is not a fabrication. Only an EMPTY slot
+    is filled; a human-edited value is never overwritten.
+    """
+    stripped = line.strip()
+    if stripped == "- **Title**:":
+        issuer = f" ({subject_ref.issuer})" if subject_ref.issuer else ""
+        return f"- **Title**: {subject_ref.subject}{issuer} — automated data snapshot `[AUTO subject_ref]`"
+    if stripped == "- **Date**:" and data_date:
+        return f"- **Date**: {data_date} (data as_of) `[AUTO — latest reconciled as_of]`"
+    if subject_ref.subject_type in {"stablecoin", "asset", "token"} and "☐ Asset/Token" in line:
+        return line.replace("☐ Asset/Token", "☑ Asset/Token")
+    return line
+
+
+# --------------------------------------------------------------------------- #
+# public API
+# --------------------------------------------------------------------------- #
+def fill(
+    template_text: str,
+    reconciled: List[ReconciledValue],
+    subject_ref: Optional[SubjectRef] = None,
+) -> str:
+    """Fill a research-template string from reconciled values. PURE — no I/O.
+
+    Returns the filled markdown:
+      * each ``[AUTO]`` slot it can map (by keyword -> metric/scope) gets the
+        reconciled value(s) as sub-bullets; the two supply scopes render as
+        DISTINCT sub-bullets, never merged;
+      * an ``[AUTO]`` slot with no matching value stays flagged;
+      * every ``[SEMI-AUTO]`` / ``[MANUAL]`` slot stays flagged for a human;
+      * a ``subject_ref`` context block + Part 0 identity slots are filled from
+        ``subject_ref`` (when provided);
+      * a data-layer Evidence Table (one row per reconciled fact, full precision)
+        is appended — including any reconciled value that found no slot.
+
+    See the module docstring for the faithfulness and scope/unit rules.
+    """
+    rvs = [rv for rv in reconciled if isinstance(rv, ReconciledValue)]
+    by_key: "Dict[Tuple[str, Optional[str]], ReconciledValue]" = {}
+    for rv in rvs:
+        by_key.setdefault((rv.metric, rv.scope), rv)
+
+    placed: "set[Tuple[str, Optional[str]]]" = set()
+    data_date = _latest_as_of(rvs)
+
+    out: List[str] = []
+    for line in template_text.split("\n"):
+        if subject_ref is not None:
+            line = _apply_header_context(line, subject_ref, data_date)
+        out.extend(_process_line(line, by_key, placed, subject_ref))
+        # inject the subject_ref context block right after the Part 0 heading
+        if subject_ref is not None and line.startswith("## Part 0"):
+            out.append("")
+            out.append(_subject_ref_block(subject_ref))
+
+    out.append(build_evidence_table(rvs, placed))
+    return "\n".join(out)
+
+
+def fill_template_file(
+    template_path: str,
+    output_path: str,
+    reconciled: List[ReconciledValue],
+    subject_ref: Optional[SubjectRef] = None,
+) -> str:
+    """Thin I/O wrapper: read the template, ``fill`` it, write the markdown.
+
+    Returns the filled markdown (also written to ``output_path``). The pure
+    ``fill`` does all the work; this only touches the filesystem.
+    """
+    from pathlib import Path
+
+    text = Path(template_path).read_text(encoding="utf-8")
+    result = fill(text, reconciled, subject_ref)
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(result, encoding="utf-8")
+    return result

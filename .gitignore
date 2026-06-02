@@ -16,6 +16,10 @@ output/
 meta/raw/*
 !meta/raw/.gitkeep
 
+# B.2.8 filler produced reports (regenerate on demand; keep the empty dir)
+meta/reports/*
+!meta/reports/.gitkeep
+
 # Sector reports rebuild on demand
 db/sector_reports/*/
 !db/sector_reports/.gitkeep

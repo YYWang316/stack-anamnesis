@@ -663,6 +663,29 @@ Per-metric table (scope noted):
 
 ---
 
+## TD-033 — filler (markdown template filler) built; orchestrator wiring + B.3 QC deferred
+
+**Status:** active 2026-06-01 (built in B.2.8 — FINAL stage of the analysis-layer trunk: extractor → resolver → aggregator → filler; consumes `ReconciledValue` + `SubjectRef`). Produced the first real deliverable: a filled USDC research markdown (`meta/reports/usdc_b28_filled.md`, gitignored).
+
+**What was built.** `analysis_layer/fillers/fill.py` with a pure `fill(template_text: str, reconciled: list[ReconciledValue], subject_ref: SubjectRef) -> str` (plus a thin I/O wrapper `fill_template_file`). It drops reconciled values into the template's `[AUTO]` slots, builds a data-layer Evidence Table (value · source · confidence), and leaves `[SEMI-AUTO]` / `[MANUAL]` slots flagged for a human. No YYFoundry brand voice (that is a separate layer, kept OUT of the objective deliverable). Does NOT import the extractors or aggregator — the caller/test wires the chain.
+
+**★ Faithfulness rule (QC integrity).** ONLY `[AUTO]` slots are auto-filled, and only with a real reconciled value. `[SEMI-AUTO]` → a visibly-flagged "needs human review" placeholder (a drafted suggestion is allowed only if flagged, never final). `[MANUAL]` → placeholder left intact, flagged. An `[AUTO]` slot with NO matching value stays flagged (marker preserved, "UNFILLED" appended) — never a fabricated number/source/claim. A reconciled value with NO slot is NOT dropped silently — it lands in the Evidence Table with a "no matching [AUTO] template slot" note. Legend/format-definition markers (body still holds a `<placeholder>`) are skipped, not treated as slots.
+
+**Slot mapping.** `[AUTO]` marker lines are mapped to `(metric, scope)` by a keyword-anchor `SLOT` registry (first spec whose keywords all appear in the line wins; most-specific first). The real v1.2 template has ONE combined "Stablecoin supply" `[AUTO]` line → it holds BOTH supply scopes + circulating supply as DISTINCT sub-bullets (single-chain Ethereum-only ~$52.6B from Alchemy AND cross-chain ~$76.4B from CoinGecko/DefiLlama), never merged into one number. The v1.2 template has NO `[AUTO]` price/market_cap/rank/volume slots, so those reconciled facts surface in the Evidence Table with the "no slot" note (mapping ambiguity surfaced, not guessed).
+
+**★ Scope/unit rendering rules (carry-over from B.2.7).** (a) Scope label is shown ONLY on supply facts (the two real supply scopes); it is omitted on price/market_cap/volume/rank even though those carry a `multi_chain` tag internally — the Evidence Table shows `—` for their scope. (b) Each value renders with its OWN unit (`$76.39B` USD, `52.57B USDC` tokens, `$0.9997` price, `#6` rank); when a cross-check compared different units (DefiLlama `circulating_supply` is USD-peg vs CMC's tokens) the Evidence Table notes `[unit: USD vs tokens]`. Human-readable in slots; FULL PRECISION in the Evidence Table. Confidence maps the aggregator's `agreement`: agree → High, single_source → Medium/Unverified, divergence → Low/Flag.
+
+**Purity.** `fill` is deterministic and does no I/O — the report Date is derived from the data's own latest `as_of`, never the wall clock. `SubjectRef` fills only deterministic identity slots (Title, Asset/Token checkbox, a `[AUTO subject_ref]` context block with issuer/contract/per-source ids) — identity bindings, not measured numbers.
+
+**Out of scope (deferred):** the orchestrator / front-door gate (subject → fetchers → extractors → reconcile → fill wiring — the deferred ② step); web third-source / red-team checks (B.3 — TOP priority next); md→HTML render, 6-card pack, SQLite (B.4+).
+
+**To advance:**
+1. Build the orchestrator that wires subject → fetchers → extractors → resolvers → reconcile → fill end-to-end (currently the test wires the chain).
+2. B.3 red-team / web third-source verification over the filled deliverable.
+3. Extend the `SLOT` registry as new templates / subject types add `[AUTO]` slots (e.g. a token-centric template with explicit price/market_cap slots).
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.
