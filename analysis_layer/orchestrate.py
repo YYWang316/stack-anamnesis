@@ -228,6 +228,7 @@ class ResearchResult:
     notes: List[str] = field(default_factory=list)
     fetch_notes: List[str] = field(default_factory=list)
     html_path: Optional[Path] = None
+    bundle_path: Optional[Path] = None
 
 
 def _resolve_or_raise(subject: str) -> SubjectRef:
@@ -254,12 +255,15 @@ def build_report(
     mode: str = "subject_driven",
     template_path: "str | Path" = DEFAULT_TEMPLATE,
     raw_dir: "str | Path" = DEFAULT_RAW_DIR,
-) -> "tuple[str, SubjectRef, List[str], List[ReconciledValue], List[str]]":
+) -> "tuple[str, SubjectRef, List[str], List[ReconciledValue], List[ReconciledValue], List[str]]":
     """Run the PURE pipeline and return the report markdown + metadata.
 
     Does everything :func:`research` does EXCEPT writing the file — so callers
     that want the markdown (or the determinism test) need not touch disk.
-    Returns ``(markdown, subject_ref, sources_loaded, reconciled, notes)``.
+    Returns ``(markdown, subject_ref, sources_loaded, reconciled, supply_change,
+    notes)``: the reconciled SPOT facts and the supply-momentum derivations are
+    kept SEPARATE (the markdown sees them merged; the facts bundle, ①, wants them
+    classified) — the markdown is built from their concatenation, unchanged.
     """
     sref = _resolve_or_raise(subject)
     # An explicit subject_type arg overrides the registry's (drives module-aware
@@ -275,17 +279,21 @@ def build_report(
     reconciled: List[ReconciledValue] = list(reconcile(extracted))
 
     # 5. derivation: supply-momentum change over the DefiLlama series, if present.
-    #    CONCATENATE its values; collect skip notes. Best-effort: absent → skip.
+    #    Kept SEPARATE from ``reconciled``; collect skip notes. Best-effort: absent → skip.
     notes: List[str] = []
+    supply_change: List[ReconciledValue] = []
     dl_env = _newest_defillama_envelope(raw, sref)
     if dl_env is not None:
         changes, change_notes = compute_supply_change(dl_env, sref)
-        reconciled = reconciled + list(changes)
+        supply_change = list(changes)
         notes.extend(change_notes)
 
-    # 6. fill the template (module-aware, keyed on subject_type + mode).
-    markdown = fill(_as_template_text(template_path), reconciled, sref, mode=mode)
-    return markdown, sref, sources_loaded, reconciled, notes
+    # 6. fill the template (module-aware, keyed on subject_type + mode). The
+    #    filler sees the merged list — bundle classification (5) is a bundle-only concern.
+    markdown = fill(
+        _as_template_text(template_path), reconciled + supply_change, sref, mode=mode
+    )
+    return markdown, sref, sources_loaded, reconciled, supply_change, notes
 
 
 def _retype(sref: SubjectRef, subject_type: str) -> SubjectRef:
@@ -314,6 +322,7 @@ def _run(
     fetch: bool = False,
     freshness_window: str = "30d",
     html: bool = False,
+    bundle: bool = False,
 ) -> ResearchResult:
     """Build the report, WRITE it, and return the full result (path + summary).
 
@@ -321,7 +330,9 @@ def _run(
     on-disk envelopes via the B.1 fetchers) — best-effort, never crashing the
     run — then the existing pure analysis runs over whatever landed. When
     ``html`` is True, a self-contained HTML rendering is ALSO written next to the
-    ``.md`` (same stem) — the markdown stays the canonical artifact."""
+    ``.md`` (same stem) — the markdown stays the canonical artifact. When
+    ``bundle`` is True, a prose-free ``<stem>.facts.json`` facts bundle (TD-041,
+    step ①) is ALSO written next to the ``.md`` for a downstream report-writer."""
     fetch_notes: List[str] = []
     if fetch:
         # imported lazily so the pure analysis path never pulls the network module
@@ -330,7 +341,7 @@ def _run(
             subject, subject_type=subject_type, freshness_window=freshness_window,
         )
 
-    markdown, sref, sources_loaded, reconciled, notes = build_report(
+    markdown, sref, sources_loaded, reconciled, supply_change, notes = build_report(
         subject, subject_type=subject_type, mode=mode,
         template_path=template_path, raw_dir=raw_dir,
     )
@@ -348,6 +359,16 @@ def _run(
         html_path = path.with_suffix(".html")
         html_path.write_text(render_html(markdown), encoding="utf-8")
 
+    bundle_path: Optional[Path] = None
+    if bundle:
+        # pure facts-folder builder (TD-041 ①); import here to keep it opt-in
+        from analysis_layer.bundle import build_facts_bundle, serialize_bundle
+        facts = build_facts_bundle(
+            sref, reconciled, supply_change, sources_loaded=sources_loaded,
+        )
+        bundle_path = path.with_suffix(".facts.json")
+        bundle_path.write_text(serialize_bundle(facts), encoding="utf-8")
+
     filled = markdown.count("[AUTO ✓ FILLED") + markdown.count("[SEMI-AUTO ✓ COMPUTED")
     derivations = (
         ["supply_change (net 7d/30d/90d)"]
@@ -356,9 +377,9 @@ def _run(
     return ResearchResult(
         path=path, markdown=markdown, subject=sref.subject,
         subject_type=sref.subject_type, sources_loaded=sources_loaded,
-        reconciled_count=len(reconciled), filled_slots=filled,
+        reconciled_count=len(reconciled) + len(supply_change), filled_slots=filled,
         derivations=derivations, notes=notes, fetch_notes=fetch_notes,
-        html_path=html_path,
+        html_path=html_path, bundle_path=bundle_path,
     )
 
 
@@ -373,6 +394,7 @@ def research(
     fetch: bool = False,
     freshness_window: str = "30d",
     html: bool = False,
+    bundle: bool = False,
 ) -> Path:
     """Regenerate ``subject``'s research report. Returns the written ``.md`` path.
 
@@ -382,14 +404,15 @@ def research(
     IMPURE fetch front (``analysis_layer.fetch_front``) runs FIRST to refresh the
     envelopes (best-effort — a failed fetcher is noted and skipped, never
     crashes), giving a full zero→report run. With ``html=True`` a self-contained
-    HTML rendering is ALSO written next to the ``.md`` (same stem); the returned
-    path is still the markdown. Raises ``ValueError`` if the subject is not in the
-    registry.
+    HTML rendering is ALSO written next to the ``.md`` (same stem); with
+    ``bundle=True`` a prose-free ``<stem>.facts.json`` facts bundle (TD-041 ①) is
+    too. The returned path is still the markdown. Raises ``ValueError`` if the
+    subject is not in the registry.
     """
     return _run(
         subject, subject_type=subject_type, mode=mode,
         template_path=template_path, raw_dir=raw_dir, out_dir=out_dir,
-        fetch=fetch, freshness_window=freshness_window, html=html,
+        fetch=fetch, freshness_window=freshness_window, html=html, bundle=bundle,
     ).path
 
 
@@ -419,6 +442,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--html", action="store_true",
                         help="also write a self-contained HTML rendering next to "
                              "the .md (status/confidence badges)")
+    parser.add_argument("--bundle", action="store_true",
+                        help="also write a prose-free facts bundle (.facts.json) "
+                             "next to the .md for a downstream report-writer (①)")
     args = parser.parse_args(argv)
 
     try:
@@ -426,6 +452,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             args.subject, subject_type=args.subject_type, mode=args.mode,
             template_path=args.template, raw_dir=args.raw_dir, out_dir=args.out_dir,
             fetch=args.fetch, freshness_window=args.window, html=args.html,
+            bundle=args.bundle,
         )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -446,6 +473,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         except ValueError:
             printed_html = result.html_path
         print(f"html written to:   {printed_html}")
+    if result.bundle_path is not None:
+        try:
+            printed_bundle = result.bundle_path.relative_to(ROOT)
+        except ValueError:
+            printed_bundle = result.bundle_path
+        print(f"bundle written to: {printed_bundle}")
     skipped = [s for s in SOURCE_EXTRACTORS if s not in result.sources_loaded]
     summary = (
         f"subject={result.subject} · subject_type={result.subject_type} · "

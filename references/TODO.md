@@ -830,6 +830,28 @@ A small legend at the top of the document keys the colours.
 
 ---
 
+## TD-041 — facts bundle (the LLM report-writer chain, step ①); pure `.facts.json`; optional `--bundle`
+
+**Status:** active 2026-06-04 (built — a NEW pure module `analysis_layer/bundle.py` + an opt-in `bundle=` flag on the orchestrator).
+
+**What was built.** `build_facts_bundle(subject_ref, reconciled, supply_change, *, sources_loaded) -> dict` — packs the orchestrator's DETERMINISTIC, provenance-carrying facts into one clean, self-contained "facts folder" (a JSON-serialisable dict) for a downstream report-writer LLM to read. **FACTS ONLY** — no analysis, no prose, no derived verdict (CONFIRMATION/DIVERGENCE stays the writer's call), no `[MANUAL]` placeholder text. Sections: `subject`/`subject_type`/`issuer`/`decimals`/`contract`/`chain`/`identifiers`; `metrics[]` (each reconciled spot fact with `value`/`unit`/`source`/`as_of`/`agreement`/`confidence`); `supply_momentum[]` (7d/30d/90d: `window`/`window_days`/`actual_days`/`net_change_pct`/`net_change_abs`/`direction`/`then_date`/`now_date` + provenance); `issuer_financials` (Circle: `revenues`/`net_income`/`assets`/`liabilities`/`equity`/`fiscal_year`, each with its own provenance, or `null`); `sources[]`. Stable snake_case field names + deterministic ordering (lists pre-sorted, `serialize_bundle` writes `sort_keys=True`). PURE + deterministic — same inputs → byte-identical JSON; the bundle content carries NO generation timestamp (only the on-disk filename does, mirroring the `.md`).
+
+**Orchestrator wiring.** `build_report` now returns `reconciled` and `supply_change` SEPARATELY (the markdown still sees them merged; classification is a bundle-only concern). `research(..., bundle=False)` / `_run(..., bundle=False)` and a `--bundle` CLI flag. Default stays OFF; the `.md` remains the canonical artifact. When `True`, a `meta/reports/<slug>_<utc>.facts.json` is written next to the `.md` (same stem); the builder is imported lazily inside the `bundle` branch.
+
+**Verified.** `tests/analysis_layer/test_bundle.py` (8 tests, no network, glob+skip): off the real USDC envelopes — reconciled metrics carry provenance, supply-momentum windows ascend with actual-day honesty, issuer financials map to snake_case with provenance, sources sorted, NO analysis/prose keys + no `[MANUAL]`/`UNFILLED` text in the blob, deterministic (built twice → equal bytes); e2e `research("USDC", bundle=True)` writes a valid `.facts.json` beside the `.md`, and the default writes none. Live CLI: `python -m analysis_layer.orchestrate USDC --bundle` → both files written.
+
+**Still ahead in the report-writer chain:** **③** wire the bundle into a writer brief (aligns to the template's `[MANUAL]` sections — see the Part 5.5 section names below); **④** renderer redo; **⑤** a no-fabrication gate. (① facts bundle = this TD; render-html was TD-040.)
+
+The template's actual `[MANUAL]` section names (Part 5.5 Stablecoin module, for the ③ writer-brief alignment — printed verbatim, template unchanged):
+- **C. Peg Stability & Market Microstructure** — Historical depeg events `[MANUAL: incident research]`; CEX depth ±0.5% bid/ask `[MANUAL: orderbook data, not in B.1]`
+- **D. Reserve & Backing** — Reserve composition `[MANUAL: monthly attestation PDF]`; Attestation cadence `[MANUAL: issuer disclosure]`; Auditor `[MANUAL]`; Banking partners & 集中度 `[MANUAL]`; 1-day/7-day redemption capacity `[MANUAL: attestation PDF]`; Cash + overnight-repo share `[MANUAL: attestation PDF]`; T-bill maturity ladder `[MANUAL: attestation PDF]`; Banking-partner concentration `[MANUAL: attestation PDF]`
+- **E. Issuer Economics** — Distribution partner revenue share `[MANUAL: contract disclosures]`
+- **F. Regulatory Posture** — Licenses held `[MANUAL: issuer site]`; GENIUS Act / MiCA status `[MANUAL]`; Freeze / blacklist capability `[MANUAL: protocol design]`; Restricted jurisdictions `[MANUAL]`
+- **G. Cross-chain Mechanics** — CCTP / native 支持的链 `[MANUAL: issuer docs]`; 接受度：哪些链把它当 primary quote/collateral asset `[MANUAL]`
+- **H. Real-world Use Cases** — Payment volume `[MANUAL: Visa Onchain Analytics 等外部源]`; Remittance corridors `[MANUAL]`; B2B settlement adoption `[MANUAL]`; Treasury management `[MANUAL]`
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.
