@@ -315,6 +315,86 @@ def test_plain_paragraph_is_not_a_callout():
     assert 'class="prose"' in html
 
 
+# --------------------------------------------------------------------------- #
+# ④.2 — inline-SVG charts from the facts bundle (facts= param)
+# --------------------------------------------------------------------------- #
+# A synthetic NON-USDC facts bundle: made-up subject, windows + values unlike the
+# real USDC report. If the charts render from THESE, nothing is USDC-hardcoded.
+FACTS = {
+    "subject": "TESTCOIN",
+    "supply_momentum": [
+        {"window": "14d", "window_days": 14, "net_change_pct": 3.50, "source": "fakesource"},
+        {"window": "60d", "window_days": 60, "net_change_pct": -7.25, "source": "fakesource"},
+    ],
+    "issuer_financials": {
+        "issuer": "TestCorp",
+        "fiscal_year": 2099,
+        "revenues": {"value": 1234000000.0, "unit": "EUR", "source": "fake_edgar"},
+        "net_income": {"value": -42000000.0, "unit": "EUR", "source": "fake_edgar"},
+        "assets": {"value": 9000000000.0, "unit": "EUR", "source": "fake_edgar"},
+        "liabilities": {"value": 8000000000.0, "unit": "EUR", "source": "fake_edgar"},
+        "equity": {"value": 1000000000.0, "unit": "EUR", "source": "fake_edgar"},
+    },
+}
+
+
+def test_charts_render_both_svgs_when_facts_present():
+    html = render_html(SYNTHETIC, facts=FACTS)
+    assert 'class="chart-at-glance"' in html
+    assert 'class="chart-grid"' in html
+    # two inline SVGs, both filled (is-filled, not the dashed placeholder)
+    assert html.count("<svg") == 2
+    assert html.count("chart-ph is-filled") == 2
+    # supply chart: bars + signed value labels + pos/neg colours
+    assert "+3.50%" in html and "−7.25%" in html
+    assert "var(--ok-ink)" in html and "var(--bad-ink)" in html
+    # financials: five bars, fiscal year, unit
+    assert "FY2099" in html and "EUR" in html
+
+
+def test_charts_subject_agnostic_in_html():
+    """GENERIC: TESTCOIN's values drive the charts; USDC's never leak in."""
+    html = render_html(SYNTHETIC, facts=FACTS)
+    assert "TestCorp" in html                       # issuer caption from data
+    # scope the window check to the chart section (SYNTHETIC's body mentions "7d")
+    section = html.split('class="chart-at-glance"', 1)[1].split("</section>", 1)[0]
+    assert "14d" in section and "60d" in section
+    assert "7d" not in section and "90d" not in section  # USDC windows absent
+    assert "Circle" not in section and "FY2025" not in section
+
+
+def test_charts_graceful_missing_issuer_financials():
+    """facts present but issuer_financials=None → supply chart renders, issuer
+    slot shows the 'no data this run' placeholder; no crash, no fabricated chart."""
+    facts = dict(FACTS, issuer_financials=None)
+    html = render_html(SYNTHETIC, facts=facts)
+    assert html.count("<svg") == 1            # only the supply chart
+    assert "no data this run" in html         # issuer slot placeholder
+    assert html.count("chart-ph is-filled") == 1
+    # placeholder slot keeps the dashed hatch (.chart-ph without is-filled)
+    assert "+3.50%" in html                   # supply chart still real
+
+
+def test_no_chart_section_when_facts_none():
+    """facts=None (default) → no chart section at all (backward-compatible)."""
+    html = render_html(SYNTHETIC)
+    assert 'class="chart-at-glance"' not in html   # (the CSS rule name is fine)
+    assert 'class="chart-grid"' not in html
+    assert "<svg" not in html
+
+
+def test_charts_self_contained():
+    html = render_html(SYNTHETIC, facts=FACTS)
+    assert "<script" not in html
+    assert "http://" not in html and "https://" not in html
+    assert "cdn" not in html.lower()
+    assert "<link" not in html
+
+
+def test_charts_deterministic():
+    assert render_html(SYNTHETIC, facts=FACTS) == render_html(SYNTHETIC, facts=FACTS)
+
+
 def test_e2e_research_writes_md_and_html(tmp_path):
     """research('USDC', html=True) over the on-disk envelopes writes BOTH a .md
     and a valid self-contained .html. Skips if no envelopes are present."""

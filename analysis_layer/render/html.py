@@ -886,6 +886,19 @@ h5, h6 {
   margin: var(--space-4) 0 var(--space-2);
   color: var(--color-ink);
 }
+
+/* ---- ④.2: a .chart-ph carrying a real inline-SVG chart (is-filled) drops the
+   dashed "placeholder" hatch for a clean solid panel; the dashed hatch stays for
+   the "no data this run" slots so a missing chart still reads as a gap, not a
+   chart. The empty slots reuse the design's .ph-body / .ph-caption verbatim. --- */
+.chart-at-glance { margin: var(--space-5) 0 var(--space-6); }
+.chart-at-glance .part-eyebrow { margin-bottom: var(--space-2); }
+.chart-ph.is-filled {
+  background: var(--color-bg);
+  border: 1px solid var(--color-rule);
+}
+.chart-ph .chart-body { width: 100%; margin: var(--space-2) 0; }
+.chart-ph .chart-body svg { display: block; width: 100%; height: auto; }
 """.strip()
 
 
@@ -905,16 +918,106 @@ _LEGEND = (
 )
 
 
-def render_html(markdown_text: str, *, title: str = None) -> str:
+# --------------------------------------------------------------------------- #
+# ④.2 — inline-SVG charts from the facts bundle (subject-agnostic, field-driven)
+#
+# The charts are built by analysis_layer.render.charts from the in-memory facts
+# bundle dict (build_facts_bundle output) the caller passes as ``facts=``. The
+# renderer stays PURE/offline — it reads the dict it is handed, never the disk.
+# Placement (TD-023): the design file parks the .chart-grid INSIDE the On-Chain
+# Metrics section, but that section has no stable anchor in the constrained
+# markdown, so we render the grid in an "At a glance" panel right after the legend
+# and before the body (the prompt's stated default) — one canonical spot, always
+# present whenever facts are supplied.
+# --------------------------------------------------------------------------- #
+def _chart_figure(tag: str, svg: Optional[str], caption: str) -> str:
+    """One .chart-ph cell: the real inline SVG when present (is-filled), else the
+    design's dashed placeholder with an honest 'no data this run' body. The
+    caption is data-derived (source / fiscal year) — never fabricated."""
+    head = f'<span class="ph-tag">{_escape(tag)}</span>'
+    cap = f'<figcaption class="ph-caption">{caption}</figcaption>'
+    if svg:
+        return (
+            '<figure class="chart-ph is-filled">'
+            f'{head}<div class="chart-body">{svg}</div>{cap}</figure>'
+        )
+    return (
+        '<figure class="chart-ph">'
+        f'{head}<div class="ph-body">no data this run</div>{cap}</figure>'
+    )
+
+
+def _supply_caption(momentum) -> str:
+    """Data-derived caption for the supply-momentum chart (windows + source)."""
+    if not momentum:
+        return "Net supply change by window — <strong>no data this run</strong>."
+    windows = ", ".join(str(m.get("window")) for m in momentum if m.get("window"))
+    srcs = sorted({m.get("source") for m in momentum if m.get("source")})
+    src = f" (<code>{_escape(srcs[0])}</code>)" if len(srcs) == 1 else ""
+    return f"<strong>Supply momentum</strong> — net supply change {windows}{src}."
+
+
+def _financials_caption(fin) -> str:
+    """Data-derived caption for the issuer-financials chart (fiscal year + source)."""
+    if not fin:
+        return "Issuer financials — <strong>no data this run</strong>."
+    fy = fin.get("fiscal_year")
+    fy_txt = f" (FY{fy})" if fy is not None else ""
+    srcs = sorted({
+        cell.get("source")
+        for cell in fin.values()
+        if isinstance(cell, dict) and cell.get("source")
+    })
+    src = f" (<code>{_escape(srcs[0])}</code>)" if len(srcs) == 1 else ""
+    issuer = fin.get("issuer")
+    who = f"{_escape(issuer)} " if issuer else ""
+    return f"<strong>{who}issuer financials</strong>{fy_txt} — flow vs stock{src}."
+
+
+def _chart_section(facts: Optional[dict]) -> str:
+    """The 'At a glance' chart grid built from the facts bundle, or ``""`` when
+    ``facts`` is None (backward-compatible: no chart section at all)."""
+    if facts is None:
+        return ""
+    from analysis_layer.render.charts import (
+        issuer_financials_svg, supply_momentum_svg,
+    )
+    momentum = facts.get("supply_momentum")
+    fin = facts.get("issuer_financials")
+    supply_svg = supply_momentum_svg(momentum)
+    fin_svg = issuer_financials_svg(fin)
+    grid = (
+        '<div class="chart-grid">'
+        + _chart_figure("Supply momentum", supply_svg, _supply_caption(momentum))
+        + _chart_figure("Issuer financials", fin_svg, _financials_caption(fin))
+        + "</div>"
+    )
+    return (
+        '<section class="chart-at-glance">'
+        '<p class="part-eyebrow">At a glance</p>'
+        f"{grid}</section>\n"
+    )
+
+
+def render_html(markdown_text: str, *, title: str = None, facts: dict = None) -> str:
     """Render a crypto research report (markdown) into ONE self-contained HTML
     string: the approved institutional-clean design, inline CSS only, no external
     resources, deterministic. Two pre-passes run first — the coaching-channel
     strip backstop and the ``⭐ → ★`` KEY SIGNAL normalisation. ``title`` defaults
-    to the report's Part 0 ``Title`` line (or first ``# `` header)."""
+    to the report's Part 0 ``Title`` line (or first ``# `` header).
+
+    ``facts`` is the in-memory facts-bundle dict (``build_facts_bundle`` output,
+    TD-041) — when supplied, an 'At a glance' grid of subject-agnostic inline-SVG
+    charts (supply momentum + issuer financials) is drawn from its fields; a field
+    that is absent renders an honest 'no data this run' placeholder rather than a
+    fabricated chart. ``facts=None`` (the default) emits NO chart section, so
+    existing callers are unaffected. The renderer stays pure/offline — ``facts``
+    is read from memory, never from disk."""
     md = strip_coaching(markdown_text)
     md = md.replace("⭐", "★")  # KEY SIGNAL marker — display normalisation only
     doc_title = _doc_title(md, title)
     header = _header_block(md, doc_title)
+    charts = _chart_section(facts)
     body = _markdown_to_body(md)
     return (
         "<!DOCTYPE html>\n"
@@ -927,6 +1030,7 @@ def render_html(markdown_text: str, *, title: str = None) -> str:
         '<div class="page">\n'
         f"{header}\n"
         f"{_LEGEND}\n"
+        f"{charts}"
         f"{body}\n"
         "</div>\n"
         "</body>\n</html>\n"

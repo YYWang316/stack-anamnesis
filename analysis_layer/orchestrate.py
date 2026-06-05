@@ -353,20 +353,28 @@ def _run(
     path = out / f"{sref.subject.lower()}_{stamp}.md"
     path.write_text(markdown, encoding="utf-8")
 
-    html_path: Optional[Path] = None
-    if html:
-        # pure stdlib renderer; import here so the module is only pulled when asked
-        from analysis_layer.render.html import render_html
-        html_path = path.with_suffix(".html")
-        html_path.write_text(render_html(markdown), encoding="utf-8")
-
-    bundle_path: Optional[Path] = None
-    if bundle:
-        # pure facts-folder builder (TD-041 ①); import here to keep it opt-in
-        from analysis_layer.bundle import build_facts_bundle, serialize_bundle
+    # The facts bundle (TD-041 ①) is needed by BOTH the HTML charts (④.2, passed
+    # in-memory as facts=) and the .facts.json file write — build it ONCE when
+    # either is requested. PURE: same dict feeds the renderer and the serialiser.
+    facts: Optional[dict] = None
+    if html or bundle:
+        from analysis_layer.bundle import build_facts_bundle
         facts = build_facts_bundle(
             sref, reconciled, supply_change, sources_loaded=sources_loaded,
         )
+
+    html_path: Optional[Path] = None
+    if html:
+        # pure stdlib renderer; import here so the module is only pulled when asked.
+        # facts= drives the ④.2 inline-SVG charts (subject-agnostic, field-driven).
+        from analysis_layer.render.html import render_html
+        html_path = path.with_suffix(".html")
+        html_path.write_text(render_html(markdown, facts=facts), encoding="utf-8")
+
+    bundle_path: Optional[Path] = None
+    if bundle:
+        # the .facts.json FILE write stays governed by this bundle flag (unchanged)
+        from analysis_layer.bundle import serialize_bundle
         bundle_path = path.with_suffix(".facts.json")
         bundle_path.write_text(serialize_bundle(facts), encoding="utf-8")
 
