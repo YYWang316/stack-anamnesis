@@ -737,7 +737,7 @@ A small legend at the top of the document keys the colours.
 
 **Verified.** `tests/analysis_layer/test_bundle.py` (8 tests, no network, glob+skip): off the real USDC envelopes — reconciled metrics carry provenance, supply-momentum windows ascend with actual-day honesty, issuer financials map to snake_case with provenance, sources sorted, NO analysis/prose keys + no `[MANUAL]`/`UNFILLED` text in the blob, deterministic (built twice → equal bytes); e2e `research("USDC", bundle=True)` writes a valid `.facts.json` beside the `.md`, and the default writes none. Live CLI: `python -m analysis_layer.orchestrate USDC --bundle` → both files written.
 
-**Still ahead in the report-writer chain:** **③** wire the bundle into a writer brief (aligns to the template's `[MANUAL]` sections — see the Part 5.5 section names below); **④** renderer redo; **⑤** a no-fabrication gate. (① facts bundle = this TD; render-html was TD-040.)
+**Still ahead in the report-writer chain:** **③** wire the bundle into a writer brief (aligns to the template's `[MANUAL]` sections — see the Part 5.5 section names below); **④/⑤ now tracked as TD-047 (④ renderer redesign) + TD-048 (⑤ no-fabrication + confidence-cap gate)** — ⑤ is the first piece of the broader B.3 QC layer (TD-049). (① facts bundle = this TD; render-html was TD-040; ③ landed in TD-042.)
 
 The template's actual `[MANUAL]` section names (Part 5.5 Stablecoin module, for the ③ writer-brief alignment — printed verbatim, template unchanged):
 - **C. Peg Stability & Market Microstructure** — Historical depeg events `[MANUAL: incident research]`; CEX depth ±0.5% bid/ask `[MANUAL: orderbook data, not in B.1]`
@@ -820,6 +820,42 @@ The template's actual `[MANUAL]` section names (Part 5.5 Stablecoin module, for 
 **Depends on / blocks.** Pure data edits on TD-030's registry; no new module. Blocks TD-045 (meaningful disambiguation). Also surfaces the non-stablecoin fetcher-set work (`SOURCES_BY_TYPE` chain / protocol rows, TD-038) and the token-schema gap (TD-017) once subjects beyond stablecoins are added.
 
 **Source tails:** TD-030 "Populate the registry with the next subjects"; TD-036 "Multi-subject registry (only USDC is bound today)"; TD-038 "multi-subject (only USDC is bound in the registry)."
+
+---
+
+## TD-047 — ④ renderer redesign (report-writer chain step ④)
+
+**Status:** active 2026-06-05 (next build — extracted from TD-041's "Still ahead" tail; the report-writer chain is ① facts bundle = TD-041, ② orchestrator wiring + ③ writer brief = TD-042, render-html (first cut) = TD-040).
+
+**What it is.** Redesign the markdown→HTML renderer (TD-040's `analysis_layer/render/html.py` was the first, focused cut) into a **locked-design** HTML report: borrow the equity `report_writer` locked-template pattern (SHA-pinned skeleton + `{{PLACEHOLDER}}` substitution — see TD-006 for the dormant equity contract this revives, crypto-adapted), so the output is ready-to-read / portfolio-grade rather than a raw badge-annotated markdown dump. PLUS a **mechanical strip backstop** for the coaching channel: `> GUIDANCE` / `> TRAP` / `> ↳ Cap check` blockquotes are today stripped only by the writer (per the crypto-report-writer brief, M5 — see TD-042); the renderer should ENFORCE the strip too, defense-in-depth so coaching can never leak into the deliverable even if the writer misses one.
+
+**Why it matters.** Two payoffs: (a) a locked design makes the report portfolio-grade and visually consistent run-to-run instead of dependent on the writer's markdown discipline; (b) the strip backstop GUARANTEES the internal coaching channel (`GUIDANCE`/`TRAP`/`Cap check`) never reaches the reader — a correctness/safety property, not a cosmetic one, that currently rests on a single layer.
+
+**Depends on / blocks.** Builds on TD-040 (render-html first cut) and TD-042 (the writer brief that defines the coaching-channel markers it must strip). Revives the locked-template discipline parked in TD-006 (the crypto report skeleton + SHA pin TD-006 was waiting for). Independent of TD-048 (they are separate chain steps over the same written report — ④ renders it, ⑤ verifies it).
+
+---
+
+## TD-048 — ⑤ no-fabrication + confidence-cap gate (report-writer chain step ⑤)
+
+**Status:** active 2026-06-05 (extracted from TD-041's "Still ahead" tail).
+
+**What it is.** A programmatic gate over the written report that verifies two invariants: (1) **no fabrication** — every number in the prose traces back to the run's `.facts.json` (TD-041 bundle); the writer invented nothing and did NOT override a machine-filled number; and (2) **confidence-cap respect** — a claimed confidence never exceeds the Front-Matter §C caps, checked via a STANDARDIZED, language-agnostic confidence token so the gate works identically on en and zh reports (no NL parsing of "High"/"高").
+
+**Why it matters.** The facts bundle is FACTS-ONLY by design (TD-041 — no prose, no verdict) and the writer is an LLM; ⑤ is the closing-the-loop check that the LLM's freedom to write prose did not let it drift from the deterministic data or over-claim certainty. It is the fail-closed gate that makes the agent-driven narrative auditable.
+
+**Depends on / blocks.** Consumes the `.facts.json` (TD-041) + the §C confidence caps + the written report. Requires a standardized confidence token to exist (may need a small token convention added to the writer brief, TD-042). **★ ⑤ is the FIRST concrete piece of the broader B.3 QC layer (TD-049)** — it is the deterministic, in-house half of verification; the adversarial/red-team and external-third-source half lives in TD-049.
+
+---
+
+## TD-049 — B.3 QC / red-team / web-third-source verification layer (umbrella)
+
+**Status:** deferred 2026-06-05 (phase-level — B.3; consolidates the "web third-source + red-team checks (B.3)" tails repeatedly deferred across TD-032, TD-033, TD-036, TD-037).
+
+**What it is.** The umbrella verification phase over the filled deliverable, two halves: (a) **adversarial / red-team review** — attack the report's claims, thesis, and the §5.5 verdict for unsupported leaps (repurposing the inherited `red_team_narrative.md` pattern, cf. TD-001); and (b) **a web-sourced 3rd source** added to the reconciliation so a metric is no longer single-source — breaking the Rule-1 `single_source → capped MEDIUM` ceiling that EVERY USDC run currently hits (a metric with only one authority can never read better than MEDIUM, no matter how trustworthy, until a genuinely independent third source agrees).
+
+**Why it matters.** Today's reports are honest but ceiling-bound: most facts cross-check only CoinGecko↔CMC or sit single-source, so confidence is structurally capped. B.3 is what lets a well-corroborated metric earn HIGH, and what red-teams the narrative the way the data layer is already reconciled — the qualitative QC the deterministic layers can't self-perform.
+
+**Depends on / blocks.** Umbrella over TD-048 (⑤ is its first, in-house piece — the no-fabrication/cap gate). Distinct from ⑤ in that it adds EXTERNAL signal (a third web source) + adversarial review, where ⑤ is purely internal consistency. Would consume the aggregator's `single_source` flags (TD-032) and the source-authority table (TD-031, which it would extend with the third source). Sequenced after the chain ④/⑤ land.
 
 ---
 
