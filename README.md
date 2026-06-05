@@ -17,7 +17,7 @@ That one command resolves the subject, gathers data from up to **seven source fe
 
 ## What this repo actually does today
 
-The live, tested pipeline lives entirely under [`analysis_layer/`](analysis_layer/). It is a single-subject crypto research pipeline whose current bound subject is **USDC (issuer: Circle)**. Given a subject it produces a markdown research report by filling [`references/templates/crypto_research_v1.3.md`](references/templates/crypto_research_v1.3.md) (whose content header reads *Research SOP v1.4* — the unified master template with the Part 5.1–5.5 subject-type modules).
+The live, tested pipeline lives entirely under [`analysis_layer/`](analysis_layer/). It is a single-subject crypto research pipeline whose current bound subject is **USDC (issuer: Circle)**. Given a subject it produces a markdown research report by filling [`references/templates/crypto_research_v2.md`](references/templates/crypto_research_v2.md) (whose content header reads *Research SOP v2* — the unified master template with the Part 5.1–5.5 subject-type modules).
 
 The data flow, end to end:
 
@@ -110,7 +110,7 @@ stack-anamnesis/
 ├── tools/fetchers/              # 7 source fetchers (alchemy, coingecko, coinmarketcap,
 │                                #   defillama, etherscan, l2beat, sec_edgar) — invoked by fetch_front
 ├── references/
-│   ├── templates/crypto_research_v1.3.md   # the report template (content header: SOP v1.4)
+│   ├── templates/crypto_research_v2.md     # the report template (content header: SOP v2)
 │   ├── anamnesis_pattern.md     #   the methodology, generalised
 │   ├── TODO.md                  #   deferred design notes (TD-NNN)
 │   └── equity_incidents_archive.md         # archived equity-domain incidents (reference, not enforced)
