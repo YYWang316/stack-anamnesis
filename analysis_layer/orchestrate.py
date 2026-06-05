@@ -44,9 +44,10 @@ from analysis_layer.fillers.fill import fill
 from analysis_layer.resolvers.subject_ref import resolve_subject
 
 ROOT = Path(__file__).resolve().parents[1]
-# The on-disk file is named v1.3 but its content header is "Research SOP v1.4" —
-# the unified master template with the Part 5.1–5.5 subject-type modules.
-DEFAULT_TEMPLATE = ROOT / "references" / "templates" / "crypto_research_v1.3.md"
+# Live template: v2 — the structural reorg (M1–M5) + rigor pass (R1–R5) of the
+# v1.4 content. Predecessors crypto_research_v1.3.md (SOP v1.4) and v1.2.md remain
+# on disk as archived, still-readable fixtures (the filler unit test pins to v1.3).
+DEFAULT_TEMPLATE = ROOT / "references" / "templates" / "crypto_research_v2.md"
 DEFAULT_RAW_DIR = "meta/raw"
 DEFAULT_OUT_DIR = "meta/reports"
 

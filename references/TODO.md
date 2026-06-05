@@ -852,6 +852,24 @@ The template's actual `[MANUAL]` section names (Part 5.5 Stablecoin module, for 
 
 ---
 
+## TD-042 — v2 template promoted to live + agent-driven report-writer wiring (chain step ③)
+
+**Status:** active 2026-06-05 (landed as a follow-up commit — see note below).
+
+**What changed.** The v2 template was promoted to live and the report-writer chain's ③ wiring was committed:
+- **Template promoted:** `references/templates/crypto_research_v2.md` is now the live template (header "Research SOP v2", no "(DRAFT)"; clean top VERSION NOTE documenting the M1–M5 reorg + R1–R5 rigor pass). Predecessors `crypto_research_v1.3.md` (content header "SOP v1.4") and `crypto_research_v1.2.md` remain archived on disk.
+- **Orchestrator repointed:** `analysis_layer/orchestrate.py` `DEFAULT_TEMPLATE` → `crypto_research_v2.md` (deterministic data layer otherwise untouched).
+- **Writer brief aligned:** `.claude/agents/crypto-report-writer.md` — the old `Part 1.6` cross-references were migrated to **Front Matter §C** (matching M2); a new **"Deliverable language & the coaching channel (M5)"** section adds the strip-`GUIDANCE`/English-body rule that fixes the bilingual-mixing bug; **R1–R5 fill instructions** added (R1 Part 9.5 Bull/Bear/Thesis-Breaker, R2 §11.1 conviction binding, R4 §1.4 disconfirming-evidence column, R5 §9.2 observable-trigger column).
+- **③ wiring committed:** the `crypto-report-writer` subagent + the `/research` command (`.claude/commands/research.md`) — deterministic `orchestrate --bundle` → subagent narrative → HTML render.
+
+**Verified.** A clean `/research USDC` post-promotion confirms the v2 template + aligned brief are live end-to-end; `pytest tests/ -q` green (414 passed, 4 skipped).
+
+**Note — interrupted first attempt.** A mid-run macOS FS-permission revocation killed the original Step 4 (the commit) mid-write; Steps 1–3 (the edits) had already been applied and survived intact (re-verified before this commit), so this landed as a **follow-up commit** rather than the original milestone commit.
+
+**Minor follow-up (not in this commit):** the v2 back-matter changelog still labels its own entries `v2 (DRAFT) reorg` / `v2 (DRAFT) rigor pass` (stale now that v2 is live; the authoritative top VERSION NOTE is clean). Cosmetic.
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.
