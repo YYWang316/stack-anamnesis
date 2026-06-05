@@ -502,9 +502,7 @@ Registry seeded with **USDC ONLY**, every binding harvested from and cross-check
 
 **Deferred follow-up (out of scope for B.2.6a):** the **front-door subject-confirm gate** + ambiguity disambiguation — e.g. "PayPal → PYPL (the equity) vs PYUSD (the stablecoin)". subject_ref is only the *lookup*; deciding *which* subject an ambiguous user prompt means belongs to the subject-confirm gate, which lands later. subject_ref deliberately does not branch on ambiguity.
 
-**To advance:**
-1. Populate the registry with the next subjects as real runs surface them (data edits, each cross-checked against a real envelope).
-2. Build the subject-confirm gate that consumes `resolve_subject` and handles the ambiguous-name case before the run commits to a subject.
+**To advance:** Open tails now tracked as TD-045 (subject-confirm / disambiguation gate) and TD-046 (multi-subject registry).
 
 ---
 
@@ -623,7 +621,7 @@ Per-metric table (scope noted):
 
 **Verified.** Unit tests (`tests/analysis_layer/test_supply_change.py`, synthetic series — no network): clean abs/pct/direction for 7d/30d/90d, short-history skip-with-note, non-contemporaneous gap recorded, rising/flat/falling direction (5bps dead-band), degenerate input → note not value. Real e2e (`tests/analysis_layer/test_filler.py::test_real_usdc_supply_change_fills_5_5_a`): real DefiLlama envelope → `compute_supply_change` CONCATENATED with `reconcile(inputs)` → `fill()` against the real v1.4 template (stablecoin, Mode A) → 5.5 A net-change line flips flagged → `[SEMI-AUTO ✓ COMPUTED]` with the right signs at Medium; rest of the report body byte-identical (Evidence Table legitimately gains the 3 rows). Output `meta/reports/usdc_b29_supply_change.md` (gitignored). Full suite: same 4 pre-existing failures, no new ones.
 
-**Out of scope (deferred):** the holder-count + real-usage legs (2/3, 3/3) and the KEY SIGNAL verdict logic; routing through `reconcile` if a 2nd historical-series source appears; momentum windows beyond 7/30/90d.
+**Out of scope (deferred):** the holder-count + real-usage legs (2/3, 3/3) and the KEY SIGNAL verdict — open tail now tracked as TD-043 (holder-count leg) + TD-044 (real-usage leg); routing through `reconcile` if a 2nd historical-series source appears; momentum windows beyond 7/30/90d.
 
 ---
 
@@ -643,7 +641,7 @@ Per-metric table (scope noted):
 
 **Verified.** `tests/analysis_layer/test_orchestrate.py` (5 tests, glob+skip if envelopes absent): real e2e `research("USDC")` → same clean stablecoin report the filler e2e proves (chain/DeFi modules + News Hook omitted, Part 5.5 + Path C kept, supply `[AUTO]` filled, 5.5 A net-change `[SEMI-AUTO ✓ COMPUTED]`, Evidence Table + faithfulness flags intact) AND now the sec_edgar Circle facts in the table; the source→extractor map names all 6; unresolvable subject → clear `ValueError`; determinism (two runs → byte-identical content); `load_and_extract` reaches all present sources incl. sec_edgar. CLI prints path + summary (6 sources loaded, 15 reconciled facts, derivation run). Full suite: same 4 pre-existing failures, no new ones.
 
-**Out of scope (deferred to B.2.11 — the FETCH front, half 2 of 2):** running the B.1 fetchers to REFRESH the envelopes (network/keys/rate-limits) BEFORE calling `research()`. The DRY refactor (the test helpers calling the orchestrator). Multi-subject registry (only USDC is bound today).
+**Out of scope (deferred to B.2.11 — the FETCH front, half 2 of 2):** running the B.1 fetchers to REFRESH the envelopes (network/keys/rate-limits) BEFORE calling `research()`. The DRY refactor (the test helpers calling the orchestrator). Multi-subject registry (only USDC is bound today — now tracked as TD-046).
 
 ---
 
@@ -685,7 +683,7 @@ Per-metric table (scope noted):
 
 **Verified.** `tests/analysis_layer/test_fetch_front.py` (12 tests, runner STUBBED — no network): wiring (exactly the 6 sources; each invocation's `--subject`/`--subject-type`/`--chain-id`/`--sec-email` correct); best-effort tolerance (one fetcher failing / raising / timing out → noted, others still run, never raises); missing-email → only SEC skipped; no-secret-leak (a hostile stub that echoes the email → scrubbed to `<sec-email redacted>`); unknown subject_type → graceful skip note; `research(fetch=False)` invokes no fetcher. **★ LIVE zero→report demo** (`python -m analysis_layer.orchestrate USDC --fetch`): 5/6 fetchers wrote FRESH 2026-06-02 envelopes live (DefiLlama, CoinGecko, CoinMarketCap, Etherscan, Alchemy — keyless or key-on-disk); SEC best-effort SKIPPED (no `$ANAMNESIS_SEC_EMAIL` set) and the run still completed over the existing SEC envelope. Filenames composed with the analysis globs as designed. (The fresh envelopes were then REMOVED to keep the value-pinned real-data tests on their 5-27 baseline — meta/raw is gitignored.) Full suite: same 4 pre-existing failures, no new ones.
 
-**Out of scope / remaining gaps:** multi-subject (only USDC is bound in the registry); the holder-count + real-usage KEY-SIGNAL legs (2/3, 3/3) still pending; non-stablecoin fetcher sets (chain/protocol rows for `SOURCES_BY_TYPE`); confirming the `ANAMNESIS_SEC_EMAIL` env-var name against any operator convention; parallelising the fetchers (currently sequential).
+**Out of scope / remaining gaps:** multi-subject (only USDC is bound in the registry — now tracked as TD-046); the holder-count + real-usage KEY-SIGNAL legs (2/3, 3/3) still pending — now tracked as TD-043 + TD-044; non-stablecoin fetcher sets (chain/protocol rows for `SOURCES_BY_TYPE`); confirming the `ANAMNESIS_SEC_EMAIL` env-var name against any operator convention; parallelising the fetchers (currently sequential).
 
 ---
 
@@ -766,6 +764,62 @@ The template's actual `[MANUAL]` section names (Part 5.5 Stablecoin module, for 
 **Note — interrupted first attempt.** A mid-run macOS FS-permission revocation killed the original Step 4 (the commit) mid-write; Steps 1–3 (the edits) had already been applied and survived intact (re-verified before this commit), so this landed as a **follow-up commit** rather than the original milestone commit.
 
 **Minor follow-up (not in this commit):** the v2 back-matter changelog still labels its own entries `v2 (DRAFT) reorg` / `v2 (DRAFT) rigor pass` (stale now that v2 is live; the authoritative top VERSION NOTE is clean). Cosmetic.
+
+---
+
+## TD-043 — KEY SIGNAL leg 2/3: holder-count / holder-structure fetcher
+
+**Status:** active 2026-06-05 (extracted from the deferred tails of TD-035 + TD-038 — a buried open item lifted into a trackable OPEN-TASK).
+
+**What it is.** The SECOND of the three legs feeding Part 5.5's "Supply Momentum: organic vs mechanical" KEY SIGNAL. A holder-count / holder-structure fetcher + derivation: top-10 / top-100 concentration, CEX vs DeFi vs EOA split, and holder-count growth over the freshness windows. Source path: Etherscan / Alchemy holders endpoints + address labeling (raw addresses only under the free tier — no Nansen-style labels, TD-021; labeling is best-effort heuristic or `[MANUAL]`).
+
+**Why it matters.** Leg 1/3 (supply-direction, TD-035) on its own leaves §5.5 supply-only and INCONCLUSIVE. Holder structure is the leg that lets the report-writer move past a supply-only read toward a real CONFIRMATION / DIVERGENCE verdict — concentration + holder-count growth distinguish organic adoption from a single mint inflating supply.
+
+**Depends on / blocks.** Builds on the same on-chain fetchers as TD-035 (Etherscan §3 / Alchemy §5). Blocks (with TD-044) the §5.5 organic-vs-mechanical verdict. The verdict itself stays the report-writer's call (TD-041) — this leg only supplies the holder-structure facts into the bundle.
+
+**Source tails:** TD-035 "the holder-count … leg (2/3)"; TD-038 "the holder-count … KEY-SIGNAL leg (2/3) still pending."
+
+---
+
+## TD-044 — KEY SIGNAL leg 3/3: real-usage signal
+
+**Status:** active 2026-06-05 (extracted from the deferred tails of TD-035 + TD-038).
+
+**What it is.** The THIRD leg of the Part 5.5 KEY SIGNAL: a real-usage signal — transfer / payment-volume + real-usage proxies that distinguish genuine economic activity from mechanical / idle supply. **Honesty note (TD-023):** much of this surface is `[MANUAL]` / external in the v2 template — de-noised payment volume, Visa Onchain Analytics, remittance corridors, B2B settlement (see TD-041's Part 5.5 H "Real-world Use Cases" `[MANUAL]` list). This TD must capture what is actually FETCHABLE on the free tier (raw transfer counts / volume via Etherscan / Alchemy) vs what STAYS `[MANUAL]` (de-noised payment volume, Visa Onchain Analytics, etc.) — do not over-promise an automated number where only a `[MANUAL]` slot is honest.
+
+**Why it matters.** The third leg that, combined with legs 1/3 (TD-035) and 2/3 (TD-043), completes the organic-vs-mechanical picture the writer needs to call §5.5 CONFIRMATION / DIVERGENCE instead of INCONCLUSIVE.
+
+**Depends on / blocks.** Pairs with TD-043; together they unblock the §5.5 verdict. Partly bounded by the free-tier coverage gaps (TD-021, TD-024 — no Dune flow classification, no Nansen labels), which is exactly why the `[MANUAL]` / fetchable split must be drawn honestly rather than faked.
+
+**Source tails:** TD-035 "the … real-usage leg (3/3)"; TD-038 "the … real-usage KEY-SIGNAL leg (3/3) still pending."
+
+---
+
+## TD-045 — subject-confirm / disambiguation gate
+
+**Status:** active 2026-06-05 (extracted from the deferred "To advance" tail of TD-030).
+
+**What it is.** A front-door subject-confirm gate that confirms / disambiguates an ambiguous user subject BEFORE the run commits to resolving it — e.g. "PayPal → PYPL (the equity) vs PYUSD (the stablecoin)". `subject_ref.resolve_subject()` (TD-030) is only the LOOKUP; deciding WHICH subject an ambiguous prompt means is this gate's job. subject_ref deliberately does not branch on ambiguity, so today the binding is implicit (USDC only) with no disambiguation step.
+
+**Why it matters.** Without it, an ambiguous prompt either silently resolves to the one bound subject or returns `None` — no confirmation that the run is about the subject the user actually meant. The gate is the safety check that the rest of the deterministic pipeline (extract → reconcile → fill) is operating on the right subject.
+
+**Depends on / blocks.** Consumes `resolve_subject` (TD-030, built). Meaningful disambiguation needs MORE THAN ONE bound subject, so it is paired with TD-046 (multi-subject registry) — with only USDC bound there is nothing to disambiguate against. Relates to the original 4-gate `subject_confirm_gate` design (B.0); this is its analysis-layer counterpart at the resolver front door.
+
+**Source tail:** TD-030 "Build the subject-confirm gate that consumes `resolve_subject` and handles the ambiguous-name case before the run commits to a subject" (+ its "Deferred follow-up" paragraph).
+
+---
+
+## TD-046 — multi-subject registry (expand bound subjects beyond USDC)
+
+**Status:** active 2026-06-05 (extracted from the deferred tails of TD-030 + TD-036 + TD-038).
+
+**What it is.** Expand the subjects bound in `analysis_layer/resolvers/subject_ref.py` + its registry beyond USDC — next stablecoins (USDT, DAI, PYUSD, …), then chains / tokens. Each addition is a DATA edit: every binding (decimals · per-source ids · contract + chain · issuer + CIK) harvested from and cross-checked against a real on-disk envelope (`meta/raw/<source>/`), per the TD-030 grounding rule.
+
+**Why it matters.** Today the whole pipeline (fetch front, orchestrator, fillers, bundle) is provably end-to-end but only ever for USDC — "only USDC is bound" is the single most-repeated remaining gap across TD-030 / TD-036 / TD-038. Multi-subject is what turns the harness from a USDC demo into general coverage, and it is the precondition for TD-045 (disambiguation needs ≥2 subjects to choose between).
+
+**Depends on / blocks.** Pure data edits on TD-030's registry; no new module. Blocks TD-045 (meaningful disambiguation). Also surfaces the non-stablecoin fetcher-set work (`SOURCES_BY_TYPE` chain / protocol rows, TD-038) and the token-schema gap (TD-017) once subjects beyond stablecoins are added.
+
+**Source tails:** TD-030 "Populate the registry with the next subjects"; TD-036 "Multi-subject registry (only USDC is bound today)"; TD-038 "multi-subject (only USDC is bound in the registry)."
 
 ---
 
