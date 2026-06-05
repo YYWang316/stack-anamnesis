@@ -49,22 +49,6 @@ no gate enforces it in Phase B).
 
 **Revisit when:** Phase C begins.
 
-## TD-003 — 365d freshness window
-
-**Status:** **closed-as-resolved-by-4-gate 2026-05-20** during 
-B.0 pre-Step-4 cleanup audit.
-
-**Resolution:** the 4-gate freshness enum (research_dimensions.md 
-§2.3 + agents/freshness_gate.md) already includes `1 year` (= 365d) 
-and `quarter` (= current fiscal quarter). The original request — 
-"add a 365d freshness window" — is delivered by the `1 year` 
-canonical value.
-
-**History:** opened during equity-era 7-gate framework design when 
-freshness enum was narrower; closed during B.0 mid-flight restart 
-audit when 4-gate freshness enum was found to already cover the 
-requested window.
-
 ## TD-004 — Add issuer attestation feeds to data_source_registry
 
 **Decision (2026-05-12):** data_source_registry starts with four core APIs + RPC tier. Issuer attestation feeds (Circle transparency, Tether reserves, Paxos attestations) are deferred to a separate entry.
@@ -217,34 +201,6 @@ Original premise: `scope_gate` path (a) narrow needed an internal restart-from-g
 
 ---
 
-## TD-016 — Repoint user_agent_pii.py PUBLIC_USER_AGENT to StackAnamnesis/<version>
-
-**Status:** **DONE in B.1.0 (commit pending) 2026-05-21.** `tools/audit/user_agent_pii.py` `PUBLIC_USER_AGENT` repointed `EquityResearchSkill/1.0` → `StackAnamnesis/1.0`; the paired test `tests/test_user_agent_pii.py` brand fixtures updated to match. All 4 PII tests + P12 aggregate suite pass. No env-var/shared-constant parameterization done (single live consumer; revisit if a second consumer appears). Equity-slug fixtures still present in `tests/test_db_pii.py:47` and `tests/test_aggregate_p12.py:129` (sample data, not the constant — not swept here; archive citations in `references/equity_incidents_archive.md` preserved as the historical I-003 leak record).
-
-**Status (original):** active 2026-05-13 (opened during B.0 #1.5 SEC EDGAR work; backfilled 2026-05-13).
-
-tools/audit/user_agent_pii.py hardcodes:
-```
-PUBLIC_USER_AGENT = "EquityResearchSkill/1.0"
-```
-
-This was the equity-era slug. references/data_source_registry.md §6 (B.0 #1.5) established the new canonical:
-```
-PUBLIC_USER_AGENT = "StackAnamnesis/1.0"
-```
-
-And agents/sec_email_gate.md (B.0 Step 3b) emits sec_user_agent using "StackAnamnesis/1.0 (<email>)" per spec. Until tools/audit/user_agent_pii.py is repointed, P12 audit will fail on the slug mismatch.
-
-**Required:** one-line edit in tools/audit/user_agent_pii.py to update the hardcoded slug from "EquityResearchSkill/1.0" to "StackAnamnesis/<version>". Consider parameterizing via env var or shared constant if multiple consumers need the slug.
-
-**Why deferred:** B.0 scope is documentation + agent contracts, no new or modified tooling. The repoint is trivial (one-line edit) but belongs in B.1 alongside the first SEC EDGAR fetcher invocation when audit actually runs and the slug mismatch would surface.
-
-**Revisit when:** B.1 first SEC EDGAR fetcher invocation OR P12 audit first runs in B.1 — whichever lands earlier.
-
-**History:** Surfaced during B.0 #1.5 (SEC EDGAR consumer contract in data_source_registry.md) when canonical slug "StackAnamnesis/1.0" was established. Cross-referenced in agents/sec_email_gate.md (Step 3b) and agents/freshness_gate.md (Step 3c). Backfilled into TODO.md during Step 3c review when cross-reference was found dangling.
-
----
-
 ## TD-017 — Extend subject_relationships.yaml schema for token entries
 
 **Status:** active 2026-05-13 (opened during B.0 Step 3c review).
@@ -289,34 +245,6 @@ The mid-flight restart from 7-gate to 4-gate design deleted the in-progress 7-ga
 **Revisit when:** each file's scheduled rewrite step lands. For coordination, list affected files in the rewrite step's commit message.
 
 **History:** Surfaced during B.0 pre-Step-4 cleanup audit (2026-05-20) when agent surveyed Phase A residue category. The 4-gate spec layer is internally clean; residue is in older layer files awaiting rewrite.
-
----
-
-## TD-019 — crypto_report_template.md 4-gate design reconciliation
-
-**Status:** active 2026-05-20 (opened during B.0 pre-Step-4 cleanup audit).
-
-crypto_report_template.md (currently untracked at repo root, v1.2, 513 lines, YYFoundry/NYU branded) predates the 4-gate design and contains content that contradicts the current spec:
-
-1. **Lines 59-60 contradict the new language enum:** template states "both 模式会并行产出两份独立 HTML (不是双语对照)" — i.e., it explicitly excludes the side_by_side value that Gate 4 now defines. With side_by_side as a canonical enum value, this template language is wrong.
-
-2. **Line 35 contradicts §2.1 subject_confirm spec:** template includes "Subject Type: □ Chain □ L2 □ DeFi □ News □ Asset/Token" as a user-facing input — but research_dimensions.md §2.1 explicitly forbids asking subject_type ("the agent never asks subject_type"). guessed_type is internal-only in the 4-gate design.
-
-3. **Gen 1/Gen 2 concepts still present:** Mode A/B auto-detection (Gen 1), Scope/sector inputs (Gen 2 P0_scope), Output Type selection (Gen 2 P0_output_format). All eliminated in 4-gate redesign.
-
-**Why deferred:** Step 7 of the B.0 restart was scheduled to MOVE this file from repo root into references/. The audit reveals the move alone is insufficient — the content needs reconciliation against the 4-gate design first. Moving a contradictory document into references/ would propagate the contradictions into the canonical reference layer.
-
-**Required:** before (or as part of) Step 7's move:
-1. Update language enum section (lines 59-60) to reflect 4 values (en/zh/both/side_by_side), with both vs side_by_side semantics distinguished per §2.4.
-2. Remove the Subject Type checkbox (line 35) and any narrative that surfaces type-selection to the user.
-3. Remove Mode A/B / Scope/sector / Output Type sections; replace with 4-gate flow if user-visible checkpoints are still desired.
-4. Verify the YYFoundry brand content (workshop notes, "Bit != Coin" framing) survives the rewrite — those are unrelated to 4-gate semantics and should be preserved.
-
-**Why both this and Step 7:** Step 7's scope was "trivial move". This TD captures the substantive design alignment work that the move surfaces. They can be combined into a single commit when both are ready, or executed separately (TD-019 first, then trivial Step 7 move). User's choice.
-
-**Aligns with TD-006** which already notes that the locked-HTML template skeleton is pending design.
-
-**History:** Surfaced during B.0 pre-Step-4 cleanup audit (2026-05-20) when agent compared crypto_report_template.md head + language/side_by_side scan against the 4-gate spec.
 
 ---
 
@@ -379,35 +307,6 @@ Three of the seven conditional data sources in `references/data_source_registry.
 
 ---
 
-## TD-022 — SKILL.md description drift in mounted equivalents
-
-**Status:** active 2026-05-23 (opened during B.1.1 verification).
-
-`test_skill_mount_parity::test_mounts_mirror_root_description` 
-fails after B.1.0's equity→crypto frontmatter reframe (commit 
-031a506). The root `SKILL.md` description was updated to crypto 
-domain, but the mounted equivalents (skills_repo or similar) 
-retain the equity description.
-
-**Scope:** find every mount carrying a `SKILL.md`-derived 
-description and propagate the crypto reframe so the parity test 
-passes. Likely 1–3 files under skills_repo/ or similar; locate via 
-`grep -r "research Apple\|6 PNG cards\|palette gate" .`
-
-**Why deferred from B.1.0:** the mount-parity drift was not visible 
-in B.1.0 verification (the prompt anticipated 3 pre-existing 
-failures; the actual baseline was 3 + this drift = 4). Surfaced 
-during B.1.1's full pytest run.
-
-**Related:** TD-018 item 1 (SKILL.md sweep) — this is the natural 
-follow-up. Bundle with other TD-018 follow-ups or do as a 
-standalone commit before B.1.2.
-
-**Architectural impact:** none for fetcher work. Test failure is 
-documentation drift, not runtime behavior.
-
----
-
 ## TD-023 — Land "prefer-intent-over-literal-prompt" lesson in MEMORY.md
 
 **Status:** CLOSED 2026-05-25. Landed in MEMORY.md as "Prefer reality 
@@ -457,7 +356,7 @@ deviation explicitly rather than silently choosing either path.
 lesson update". MEMORY.md changes belong in their own commit.
 
 **Bundle with:** before B.1.3, single commit that lands TD-023 + 
-also addresses TD-022 if I want to clear documentation drift first. 
+also addresses TD-022 (since resolved/removed) if I want to clear documentation drift first. 
 Otherwise standalone.
 
 **Architectural impact:** none for fetchers. Documentation / 
@@ -925,7 +824,7 @@ When forking a harness for a new domain, the inherited framework's shape (gate c
 # B.0 Restart — Completion Declaration
 
 **Status: COMPLETE 2026-05-21.** Steps 1-6 shipped; Step 7 deferred 
-to B.5+ (template reconciliation deferred per TD-019).
+to B.5+ (template reconciliation deferred per TD-019, now superseded by TD-042 — v2 template promoted to live).
 
 ## Commits (12 total)
 
@@ -982,15 +881,12 @@ to B.5+ (template reconciliation deferred per TD-019).
 - TD-011 (validate seed CIKs — paired with first SEC EDGAR fetcher)
 - TD-012 (lint_subject_relationships.py — B.1 paired)
 - TD-013 (append_subject_entry.py — B.1 paired)
-- TD-016 (user_agent_pii.py slug repoint — B.1 paired)
 - TD-017 (yaml schema for tokens — B.1 first token research)
 - TD-018 (Gen 1/2 residue sweep, 7 files — each file's rewrite step)
-- TD-019 (crypto_report_template.md reconcile — B.5 writer design 
-  paired)
 - TD-020 (B.1 verification of Medium-confidence sources)
 
 **B.1 deliverables blocked by active TDs**: see TD-011, TD-012, 
-TD-013, TD-016 for B.1's first SEC EDGAR fetcher dependencies.
+TD-013 for B.1's first SEC EDGAR fetcher dependencies.
 
 ## Mid-flight lessons preserved (now in MEMORY.md)
 
