@@ -368,8 +368,20 @@ def _run(
         # pure stdlib renderer; import here so the module is only pulled when asked.
         # facts= drives the ④.2 inline-SVG charts (subject-agnostic, field-driven).
         from analysis_layer.render.html import render_html
+        from analysis_layer.render.validate import validate_report_html
+        rendered = render_html(markdown, facts=facts)
+        # ④.3 FAIL-CLOSED HTML-integrity gate: never ship a report that leaks the
+        # coaching channel, pulls an external resource, lost the design structure,
+        # or carries broken SVG geometry. The real report passes (calibrated), so
+        # the live path is unaffected; a violation RAISES before any file write.
+        violations = validate_report_html(rendered, facts_present=facts is not None)
+        if violations:
+            raise ValueError(
+                "rendered HTML failed validation (fail-closed):\n  - "
+                + "\n  - ".join(violations)
+            )
         html_path = path.with_suffix(".html")
-        html_path.write_text(render_html(markdown, facts=facts), encoding="utf-8")
+        html_path.write_text(rendered, encoding="utf-8")
 
     bundle_path: Optional[Path] = None
     if bundle:
