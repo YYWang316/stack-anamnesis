@@ -50,6 +50,38 @@ def _render():
     return render_html(SYNTHETIC)
 
 
+# A Part-0-bearing report exercising the ④.1 design header, the coaching-strip
+# backstop, and the ⭐→★ KEY SIGNAL normalisation.
+DESIGN_DOC = """# Crypto Research Report Template
+
+# REPORT BODY — the deliverable
+
+## Part 0 — Meta `[Both]`
+
+> **[AUTO subject_ref]** subject **USDC** · subject_type stablecoin · issuer Circle · decimals 6 · sec_cik=`0001876042`
+
+- **Title**: USDC (Circle) — automated data snapshot `[AUTO subject_ref]`
+- **Date**: 2026-05-28 (data as_of) `[AUTO — latest reconciled as_of]`
+
+## Part 5 — On-Chain Metrics `[Mode A required]`
+
+#### ⭐⭐ KEY SIGNAL — Supply Momentum: organic vs mechanical
+
+Supply slope is the only demand signal a $1-pegged asset emits.
+
+> GUIDANCE: think about whether supply growth is organic — coaching, strip it.
+> a second coaching line in the same blockquote.
+
+> TRAP: do not confuse trading volume with real demand.
+
+> ↳ Cap check: single_source metrics are capped at MEDIUM.
+
+> **[AUTO module-aware]** rendered for subject_type stablecoin — a normal blockquote, keep it.
+
+- Total supply `[AUTO ✓ FILLED: DefiLlama stablecoins]`
+"""
+
+
 def test_headers_become_h_tags():
     html = _render()
     assert re.search(r"<h1[^>]*>.*USDC \(Circle\)", html)
@@ -60,7 +92,8 @@ def test_headers_become_h_tags():
 
 def test_evidence_table_rendered_as_table():
     html = _render()
-    assert "<table>" in html and "</table>" in html
+    # ④.1 — the design styles table.memo, so the table now carries a class
+    assert "<table" in html and "</table>" in html
     assert "<thead>" in html and "<th>" in html
     assert "<tbody>" in html and "<td>" in html
     assert "Claim" in html and "52.08B" in html
@@ -117,6 +150,9 @@ def test_self_contained_no_external_resources():
     assert "<style>" in html
     assert "<link" not in html
     assert "src=" not in html
+    assert "<script" not in html
+    assert "@import" not in html
+    assert "cdn" not in html.lower()
     assert "http://" not in html and "https://" not in html
 
 
@@ -148,6 +184,79 @@ def test_no_raw_markers_leak_outside_badges():
     assert "<code>[AUTO ✓ FILLED" not in html
 
 
+# --------------------------------------------------------------------------- #
+# ④.1 — institutional-clean design adoption + coaching-strip backstop
+# --------------------------------------------------------------------------- #
+def test_design_classes_present():
+    """The renderer emits the wrapper markup the design CSS targets."""
+    html = _render()
+    assert 'class="page"' in html
+    assert 'class="part-title"' in html          # h2
+    assert 'class="sub-title"' in html           # h3
+    assert 'class="minor-title"' in html         # h4
+    assert '<table class="memo">' in html
+    assert 'class="table-wrap"' in html
+    assert 'class="legend-item"' in html
+    # the embedded design system carries its CSS-variable :root + print block
+    assert ":root" in html and "@media print" in html
+
+
+def test_design_header_renders_with_snapshot():
+    """A Part-0 report gets a .report-head block with the title pulled from the
+    'Title' line and an as_of snapshot pulled from the 'Date' line."""
+    html = render_html(DESIGN_DOC)
+    assert 'class="report-head"' in html
+    assert 'class="snapshot"' in html
+    assert "as_of" in html and "2026-05-28" in html
+    # title comes from the Part 0 "- **Title**:" line, not the boilerplate h1
+    assert "<title>USDC (Circle) — automated data snapshot</title>" in html
+    assert re.search(r'<header class="report-head">.*<h1>USDC \(Circle\)', html, re.S)
+    # subject_type / issuer surfaced in the snapshot when cleanly present
+    assert "stablecoin" in html and "Circle" in html
+    # the level-1 boilerplate headers are promoted out of the body, not duplicated
+    assert "<h1>REPORT BODY" not in html and "Crypto Research Report Template" not in html
+
+
+def test_header_title_only_when_no_date():
+    """No clean Part-0 Date line → title only, no snapshot subline (graceful)."""
+    html = render_html("# Just A Title\n\nsome body text.\n")
+    assert 'class="report-head"' in html
+    assert 'class="snapshot"' not in html
+    assert "<title>Just A Title</title>" in html
+
+
+def test_coaching_strip_backstop():
+    """GUIDANCE / TRAP / ↳ Cap check blockquotes are removed whole; a normal
+    blockquote in the same document survives."""
+    html = render_html(DESIGN_DOC)
+    assert "GUIDANCE" not in html
+    assert "TRAP" not in html
+    assert "Cap check" not in html
+    assert "do not confuse trading volume" not in html   # TRAP body gone
+    assert "capped at MEDIUM" not in html                # Cap-check body gone
+    assert "second coaching line" not in html            # multi-line run fully removed
+    # the normal [AUTO module-aware] blockquote was preserved
+    assert "module-aware" in html
+    assert "<blockquote>" in html
+
+
+def test_normal_blockquote_not_stripped():
+    html = _render()  # SYNTHETIC's "Confidence downgrade triggers:" blockquote
+    assert "<blockquote>" in html
+    assert "Confidence downgrade triggers" in html
+
+
+def test_keysignal_star_normalization():
+    """⭐ markers are normalised to ★ on output (display only)."""
+    html = render_html(DESIGN_DOC)
+    assert "★★ KEY SIGNAL" in html
+    assert "⭐" not in html
+
+
+def test_design_doc_deterministic():
+    assert render_html(DESIGN_DOC) == render_html(DESIGN_DOC)
+
+
 def test_e2e_research_writes_md_and_html(tmp_path):
     """research('USDC', html=True) over the on-disk envelopes writes BOTH a .md
     and a valid self-contained .html. Skips if no envelopes are present."""
@@ -164,6 +273,7 @@ def test_e2e_research_writes_md_and_html(tmp_path):
     assert html_path.exists(), "html=True must write a .html next to the .md"
     html = html_path.read_text(encoding="utf-8")
     assert html.startswith("<!DOCTYPE html>")
-    assert "<table>" in html
+    assert "<table" in html
     assert "badge" in html
+    assert 'class="report-head"' in html  # ④.1 institutional header
     assert "<link" not in html and "src=" not in html

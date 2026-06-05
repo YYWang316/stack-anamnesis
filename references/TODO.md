@@ -833,6 +833,8 @@ The template's actual `[MANUAL]` section names (Part 5.5 Stablecoin module, for 
 
 **Depends on / blocks.** Builds on TD-040 (render-html first cut) and TD-042 (the writer brief that defines the coaching-channel markers it must strip). Revives the locked-template discipline parked in TD-006 (the crypto report skeleton + SHA pin TD-006 was waiting for). Independent of TD-048 (they are separate chain steps over the same written report — ④ renders it, ⑤ verifies it).
 
+**Progress.** ④.1 done (2026-06-05): `analysis_layer/render/html.py` adopts the approved institutional-clean design (`meta/design/report_design_v1.html` — `:root` token system + `@media print` embedded verbatim, stays self-contained/stdlib-only/deterministic) and adds the coaching-strip backstop (`> GUIDANCE` / `> TRAP` / `> ↳ Cap check` blockquotes removed whole) + the ⭐→★ KEY SIGNAL display normalisation. Remaining: ④.2 (chart placeholders + inline-SVG charts — CSS already dormant in the embedded stylesheet) and ④.3 (the locked-design/SHA validator backstop). **Reconcile note (TD-023):** the design's bespoke hand-markup (`.part`/`.part-eyebrow` section wrappers, `.callout` conclusion blocks, verdict `.verdict-*` pills + `tr.is-selected`/`td.num/neg/pos` table semantics, the `.subtitle`) is NOT inferable from the constrained markdown, so ④.1 applies the design at the element level (`report-head` header, `.page`, `table.memo`/`.table-wrap`, `p.prose`, classed headings, `.legend`) and leaves the bespoke structures for a future locked-skeleton pass; a small clearly-marked supplemental CSS block harmonises the generic `<ul>`/`<blockquote>`/`<hr>`/h5-6 tags the renderer emits.
+
 ---
 
 ## TD-048 — ⑤ no-fabrication + confidence-cap gate (report-writer chain step ⑤)
