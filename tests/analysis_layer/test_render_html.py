@@ -257,6 +257,64 @@ def test_design_doc_deterministic():
     assert render_html(DESIGN_DOC) == render_html(DESIGN_DOC)
 
 
+# --------------------------------------------------------------------------- #
+# ④.1b — verdict-row highlight · coloured deltas · callout conclusions
+# --------------------------------------------------------------------------- #
+DELTA_DOC = """# Verdict & Deltas
+
+#### ⭐⭐ KEY SIGNAL — Supply Momentum
+
+| Verdict | Supply | Read |
+|---|--------|------|
+| ☐ CONFIRMATION | ↑ | up |
+| ☑ INCONCLUSIVE | mixed | soft over 30d (−1.62%) |
+
+Net change 7d +0.24%, 30d −1.62%, 90d +1.52% as of 2026-05-28.
+
+**One-line conclusion:** supply is soft over 30d (−1.62%) but positive 90d (+1.52%).
+"""
+
+
+def test_verdict_row_highlight():
+    html = render_html(DELTA_DOC)
+    assert 'class="is-selected"' in html   # the ☑ row
+    assert 'class="is-dim"' in html        # the ☐ row
+    # exactly one selected, one dimmed in this two-body-row verdict table
+    assert html.count('class="is-selected"') == 1
+    assert html.count('class="is-dim"') == 1
+
+
+def test_colored_signed_deltas():
+    html = render_html(DELTA_DOC)
+    assert '<span class="neg">−1.62%</span>' in html
+    assert '<span class="pos">+1.52%</span>' in html
+    assert '<span class="pos">+0.24%</span>' in html
+
+
+def test_dates_and_hyphens_not_colored():
+    html = render_html(DELTA_DOC)
+    assert "2026-05-28" in html  # date left intact, not split into a delta span
+    # ONLY the genuine signed deltas are coloured — the date's hyphens are not:
+    # table cell (1 neg) + prose (2 pos, 1 neg) + callout (1 pos, 1 neg)
+    assert html.count('class="neg"') == 3
+    assert html.count('class="pos"') == 3
+
+
+def test_callout_conclusion_block():
+    html = render_html(DELTA_DOC)
+    assert 'class="callout"' in html
+    assert 'class="label"' in html
+    assert "One-line conclusion" in html
+    # deltas inside the callout body are still coloured
+    assert '<span class="neg">−1.62%</span>' in html
+
+
+def test_plain_paragraph_is_not_a_callout():
+    html = render_html("# T\n\nThe verdict here is mid-sentence, not a prefix.\n")
+    assert 'class="callout"' not in html
+    assert 'class="prose"' in html
+
+
 def test_e2e_research_writes_md_and_html(tmp_path):
     """research('USDC', html=True) over the on-disk envelopes writes BOTH a .md
     and a valid self-contained .html. Skips if no envelopes are present."""

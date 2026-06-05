@@ -95,6 +95,24 @@ def _chip(level: str) -> str:
     return f'<span class="chip {cls}">{level}</span>'
 
 
+# Colour clearly-signed numeric / percent / $ deltas (design's .neg / .pos). The
+# sign must be ``+``, ``−`` (U+2212) or ``-`` AND immediately precede a digit or
+# ``$`` AND not sit after a word char / ``$`` / ``.`` — so date hyphens
+# (``2026-05-28``), hyphenated words (``mixed-to-soft``) and en-dash ranges
+# (``3–12mo``) are left alone; only genuine signed magnitudes are wrapped.
+_DELTA_RE = re.compile(
+    r"(?<![\w$.])([+−-])(\$?\d[\d,]*(?:\.\d+)?(?:%|[A-Za-z]{1,2})?)"
+)
+
+
+def _color_deltas(html_text: str) -> str:
+    def _repl(m: "re.Match[str]") -> str:
+        cls = "pos" if m.group(1) == "+" else "neg"
+        return f'<span class="{cls}">{m.group(1)}{m.group(2)}</span>'
+
+    return _DELTA_RE.sub(_repl, html_text)
+
+
 def _apply_badges(s: str) -> str:
     """Wrap the report's status markers in coloured spans. Runs on ESCAPED text
     and emits raw span HTML, BEFORE the generic bold/code passes — so it consumes
@@ -190,11 +208,12 @@ def _is_table_header(line: str, nxt: str) -> bool:
 # --------------------------------------------------------------------------- #
 def _render_table_cell(cell: str) -> str:
     """A table cell → inline HTML, with a bare High/Medium/Low promoted to a chip
-    (so the Evidence Table's Confidence column is scannable too)."""
+    (so the Evidence Table's Confidence column is scannable too) and clearly-signed
+    deltas coloured."""
     bare = cell.strip()
     if bare.lower() in _CHIP_CLASS:
         return _chip(bare)
-    return _inline(cell)
+    return _color_deltas(_inline(cell))
 
 
 def _render_table(lines: List[str], i: int) -> Tuple[str, int]:
@@ -209,7 +228,19 @@ def _render_table(lines: List[str], i: int) -> Tuple[str, int]:
     out += [f"<th>{_inline(c)}</th>" for c in header]
     out += ["</tr></thead>", "<tbody>"]
     for row in rows:
-        out.append("<tr>")
+        # verdict-row highlight: a ☑ cell selects the row, a ☐ cell dims it.
+        # Lives inside _render_table, so only TABLE rows are touched — the
+        # ☑/☐ checkbox LISTS (Part 0 Subject Type, Data Availability, Position)
+        # render as lists, not tables, and are unaffected. In the current
+        # template the §5.5 KEY SIGNAL matrix is the only table with checkbox
+        # cells, so this lands exactly there.
+        joined = "".join(row)
+        if "☑" in joined:
+            out.append('<tr class="is-selected">')
+        elif "☐" in joined:
+            out.append('<tr class="is-dim">')
+        else:
+            out.append("<tr>")
         out += [f"<td>{_render_table_cell(c)}</td>" for c in row]
         out.append("</tr>")
     out += ["</tbody>", "</table>", "</div>"]
@@ -263,8 +294,13 @@ def _render_blockquote(lines: List[str], i: int) -> Tuple[str, int]:
     return "<blockquote>" + "<br>".join(parts) + "</blockquote>", i
 
 
+# A paragraph opening with "One-line conclusion:" / "VERDICT:" (optionally
+# wrapped in markdown bold) becomes the design's .callout summary block.
+_CALLOUT_RE = re.compile(r"^\*{0,2}\s*(One-line conclusion|VERDICT)\s*[:：]\*{0,2}\s*(.*)$")
+
+
 def _render_paragraph(lines: List[str], i: int) -> Tuple[str, int]:
-    parts: List[str] = []
+    raw_parts: List[str] = []
     while i < len(lines):
         ln = lines[i]
         if (
@@ -276,9 +312,15 @@ def _render_paragraph(lines: List[str], i: int) -> Tuple[str, int]:
             or (i + 1 < len(lines) and _is_table_header(ln, lines[i + 1]))
         ):
             break
-        parts.append(_inline(ln.strip()))
+        raw_parts.append(ln.strip())
         i += 1
-    return '<p class="prose">' + " ".join(parts) + "</p>", i
+    raw = " ".join(raw_parts)
+    m = _CALLOUT_RE.match(raw)
+    if m:
+        label = _escape(m.group(1))
+        body = _color_deltas(_inline(m.group(2)))
+        return f'<div class="callout"><span class="label">{label}</span> {body}</div>', i
+    return '<p class="prose">' + _color_deltas(_inline(raw)) + "</p>", i
 
 
 # --------------------------------------------------------------------------- #
