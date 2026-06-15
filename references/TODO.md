@@ -867,6 +867,32 @@ The template's actual `[MANUAL]` section names (Part 5.5 Stablecoin module, for 
 
 ---
 
+## TD-050 — v3 template refactor + GO-LIVE (separation-of-concerns split; live path still v2)
+
+**Status:** active 2026-06-15 (Phase-1 artifacts committed `b8c448b`; go-live deferred). Tracks work that previously existed only as untracked files with no TD (TD-023 grounding: the v3 skeleton, playbook, and design HTML were on disk + dry-run-validated but invisible to git and the roadmap).
+
+**What landed (Phase 1 — the 3-artifact split, committed `b8c448b`).** v2 did three jobs in one file: (1) the deliverable skeleton, (2) subject-type branching + module-stacking, (3) writer coaching + §C confidence rules. v3 splits them so each is independently editable:
+- `references/templates/crypto_research_v3.md` — **job 1 only**: the universal deliverable spine + `<!-- MODULE: … -->` injection anchors. No branching forest, no `> GUIDANCE`/`> TRAP`, no §C rules, no metric values.
+- `references/playbooks/analysis_playbook.md` — **jobs 2+3**: §I classification (A–H + composite rule), §II per-class module library + deterministic stacking table, §III global writing primitives (Insight Contract / Interpretation Bands / Synthesis line / CT-Cards), §IV hard confidence caps (relocated verbatim-in-substance from v2 §C).
+- `meta/design/report_design_v1.html` — the institutional-clean design the ④ renderer embeds verbatim.
+
+**Locked decisions (do NOT relitigate at go-live).**
+1. **2a — the machine places every number.** At go-live the orchestrator/filler renders the facts bundle into a generic facts table at `<!-- MODULE: metrics -->`; the writer references + interprets those figures and never introduces a number absent from the bundle. (This is the change `orchestrate.py` still LACKS — confirmed in the TD-023 audit: no `MODULE: metrics` handling in `analysis_layer/*.py`.)
+2. **Multi-module stacking is deterministic.** `subject_type` → ONE base module + zero-or-more add-ons switched on by enumerated triggers (playbook §II.0). The LLM's only judgment is the small "does this add-on trigger?" test — never freeform module invention. An unknown/`null` type falls back to class H (narrative), FAIL-SAFE.
+3. **Pragmatic quoting.** The writer quotes machine figures at a sane precision (`$76.5B`, `−1.62% over 30d`) but the value must trace to a `metrics[]`/`supply_momentum[]`/`issuer_financials` entry; `[MANUAL]` slots stay flagged, never fabricated.
+
+**Remaining for GO-LIVE (none done yet — live path is still v2, confirmed 3 ways: `orchestrate.DEFAULT_TEMPLATE = crypto_research_v2.md`; writer brief is v2-flow; 2a filler absent).**
+1. **Build the 2a filler** — render the facts bundle into the generic facts table at `<!-- MODULE: metrics -->`; an anchor never consumed must render as literal escaped text (fail-loud), so the filler MUST replace `metrics` and the writer MUST consume the rest before render.
+2. **Repoint `orchestrate.DEFAULT_TEMPLATE`** from `crypto_research_v2.md` → `crypto_research_v3.md`.
+3. **Rewrite the live writer brief** (`.claude/agents/crypto-report-writer.md`) from the v2 flow to the **playbook-driven flow** (the playbook's "DRAFT — Proposed Writer Runtime Flow" block C becomes the live brief: read `subject_type` → classify §I → stack §II.0 → inject at anchors → apply §III primitives → apply §IV caps → strip coaching → return whole markdown).
+4. **2-type validation** — prove the pipeline on at least two distinct `subject_type`s (e.g. the stablecoin composite A+F that the `usdc_v3_*` dry-runs already cover, plus one non-stablecoin base class) before retiring v2.
+
+**Evidence / dry-runs (gitignored, regenerate on demand).** `meta/reports/usdc_v3_sample_*` (hand-driven block-C preview) and `usdc_v3_llm_*` (agent-driven via the playbook flow) validate the v3 structure end-to-end against a real USDC bundle. Both confirm §5.5 is still supply-leg-only (the holder/usage legs, TD-043/044, are the data-depth blockers independent of go-live).
+
+**Depends on / relates to.** Independent of TD-047 (④ renderer, CLOSED) and TD-048 (⑤ gate) — those operate on whatever markdown the chain emits. Go-live step 3 (playbook-driven brief) is where §IV caps become the writer's contract; TD-048 ⑤.2 would later enforce them mechanically. Multi-subject (TD-046) is orthogonal but pairs naturally with step 4's 2-type validation.
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.
