@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>USDC (Circle) — automated data snapshot · Stack Anamnesis</title>
+<style>
+/* =========================================================================
+   STACK ANAMNESIS — institutional research-memo visual system  (v1 design spec)
+   Self-contained: system fonts only, no external resources, no JS.
+   All theming via :root custom properties so a string-renderer can reproduce
+   this deterministically.
+   ========================================================================= */
+:root {
+  color-scheme: light;
+
+  /* ---- Type stacks (system only) ---------------------------------------- */
+  --font-ui:   -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-body: Georgia, "Times New Roman", "Songti SC", "Noto Serif", serif;
+  --font-mono: "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* ---- Neutral base + ONE restrained navy accent ------------------------ */
+  --color-bg:          #ffffff;   /* page                                   */
+  --color-surface:     #f9fafb;   /* off-white panels / table head / chart   */
+  --color-surface-2:   #f4f6f8;   /* zebra / nested fill                     */
+  --color-ink:         #1b2330;   /* primary text (navy-tinted near-black)   */
+  --color-ink-soft:    #39424f;   /* secondary text                         */
+  --color-muted:       #5c6675;   /* captions / meta                        */
+  --color-faint:       #8b95a3;   /* least-emphasis labels                  */
+  --color-accent:      #1b3a6b;   /* deep navy — the single accent          */
+  --color-accent-deep: #15305a;   /* hover / emphatic navy                  */
+  --color-accent-tint: #eef2f8;   /* navy wash for headers / callouts       */
+
+  /* ---- Hairline rules (memo, not boxes) --------------------------------- */
+  --color-rule:        #e5e8ee;   /* default hairline                       */
+  --color-rule-soft:   #eef0f4;   /* faintest divider                       */
+  --color-rule-strong: #c9d0da;   /* table head underline / strong divider  */
+
+  /* ---- Status palette — muted & professional (NOT candy) ---------------- */
+  --ok-ink:    #2f6b46;  --ok-bg:    #eef4f0;  --ok-border:    #cbe0d3;  /* green  */
+  --warn-ink:  #8a6014;  --warn-bg:  #f8f1e2;  --warn-border:  #e9d8b2;  /* amber  */
+  --bad-ink:   #9a3b32;  --bad-bg:   #f5ece9;  --bad-border:   #e3c9c3;  /* red    */
+  --neutral-ink: #54607a; --neutral-bg: #eef0f4; --neutral-border: #d6dbe3; /* grey */
+
+  /* ---- Spacing scale ---------------------------------------------------- */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+
+  /* ---- Radii ------------------------------------------------------------ */
+  --radius-sm: 3px;  --radius-md: 5px;  --radius-lg: 8px;
+
+  /* ---- Type scale ------------------------------------------------------- */
+  --fs-eyebrow: 0.72rem;
+  --fs-meta:    0.82rem;
+  --fs-body:    1.0rem;
+  --fs-h4:      1.05rem;
+  --fs-h3:      1.22rem;
+  --fs-h2:      1.5rem;
+  --fs-h1:      2.0rem;
+}
+
+/* ---- Reset-ish ---------------------------------------------------------- */
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  line-height: 1.65;
+}
+.page {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: var(--space-7) var(--space-6) var(--space-8);
+}
+
+/* =========================================================================
+   1 · REPORT HEADER
+   ========================================================================= */
+.report-head {
+  border-top: 3px solid var(--color-accent);
+  padding-top: var(--space-5);
+  margin-bottom: var(--space-6);
+}
+.report-head .eyebrow {
+  font-size: var(--fs-eyebrow);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--color-accent);
+  margin: 0 0 var(--space-3);
+}
+.report-head h1 {
+  font-family: var(--font-ui);
+  font-size: var(--fs-h1);
+  line-height: 1.18;
+  font-weight: 650;
+  letter-spacing: -0.012em;
+  margin: 0 0 var(--space-3);
+  color: var(--color-ink);
+}
+.report-head .subtitle {
+  font-family: var(--font-body);
+  font-size: 1.08rem;
+  color: var(--color-ink-soft);
+  margin: 0 0 var(--space-4);
+}
+.snapshot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  align-items: baseline;
+  font-size: var(--fs-meta);
+  color: var(--color-muted);
+  border-top: 1px solid var(--color-rule);
+  border-bottom: 1px solid var(--color-rule);
+  padding: var(--space-3) 0;
+}
+.snapshot .snap-key {
+  font-weight: 600;
+  color: var(--color-ink-soft);
+}
+.snapshot .sep { color: var(--color-faint); }
+.snapshot code, .meta-mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--color-accent);
+}
+
+/* =========================================================================
+   2 · SECTION HEADINGS  (Part N — Title)
+   ========================================================================= */
+.part {
+  margin-top: var(--space-8);
+}
+.part-eyebrow {
+  font-size: var(--fs-eyebrow);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--color-accent);
+  margin: 0 0 var(--space-2);
+}
+h2.part-title {
+  font-family: var(--font-ui);
+  font-size: var(--fs-h2);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: 2px solid var(--color-rule-strong);
+  color: var(--color-ink);
+}
+h3.sub-title {
+  font-family: var(--font-ui);
+  font-size: var(--fs-h3);
+  font-weight: 600;
+  margin: var(--space-6) 0 var(--space-2);
+  color: var(--color-ink);
+}
+h4.minor-title {
+  font-family: var(--font-ui);
+  font-size: var(--fs-h4);
+  font-weight: 650;
+  margin: var(--space-5) 0 var(--space-2);
+  color: var(--color-ink);
+}
+
+/* ---- Body prose (serif, generous leading) ------------------------------ */
+p.prose {
+  font-family: var(--font-body);
+  font-size: 1.02rem;
+  line-height: 1.72;
+  color: var(--color-ink-soft);
+  margin: 0 0 var(--space-4);
+}
+p.prose strong { color: var(--color-ink); font-weight: 700; }
+p.prose em { color: var(--color-ink); }
+.lead { font-size: 1.06rem; }
+code, .mono { font-family: var(--font-mono); }
+p.prose code {
+  font-size: 0.88em;
+  background: var(--color-surface-2);
+  padding: 0.05em 0.32em;
+  border-radius: var(--radius-sm);
+  color: var(--color-accent);
+}
+
+/* =========================================================================
+   TABLES — printed-memo treatment: light horizontal rules, restrained head
+   ========================================================================= */
+.table-wrap { margin: var(--space-4) 0 var(--space-5); }
+.table-caption {
+  font-size: var(--fs-meta);
+  color: var(--color-muted);
+  margin: 0 0 var(--space-2);
+}
+.table-caption .tnum {
+  font-weight: 700;
+  color: var(--color-accent);
+  letter-spacing: 0.04em;
+}
+table.memo {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+table.memo thead th {
+  text-align: left;
+  font-weight: 600;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  background: var(--color-surface);
+  padding: var(--space-3) var(--space-3);
+  border-bottom: 2px solid var(--color-rule-strong);
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+table.memo tbody td {
+  padding: var(--space-3) var(--space-3);
+  border-bottom: 1px solid var(--color-rule);
+  vertical-align: top;
+  color: var(--color-ink-soft);
+}
+table.memo tbody tr:last-child td { border-bottom: 1px solid var(--color-rule-strong); }
+table.memo td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.memo td.idx { color: var(--color-faint); font-variant-numeric: tabular-nums; width: 1.5em; }
+table.memo td strong { color: var(--color-ink); }
+table.memo .neg { color: var(--bad-ink); font-weight: 600; }
+table.memo .pos { color: var(--ok-ink); font-weight: 600; }
+/* selected (verdict) row gets a restrained navy left-marker */
+table.memo tr.is-selected td { background: var(--color-accent-tint); }
+table.memo tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(--color-accent); }
+table.memo tr.is-dim td { color: var(--color-faint); }
+
+/* =========================================================================
+   STATUS BADGES + CONFIDENCE CHIPS
+   ========================================================================= */
+.badge {
+  display: inline-block;
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  padding: 0.05em 0.5em;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+/* [AUTO ✓ FILLED] — green */
+.badge-filled { background: var(--ok-bg);   color: var(--ok-ink);   border-color: var(--ok-border); }
+/* [⚠ NEEDS HUMAN REVIEW] / [⚠ MANUAL] / [⚠ UNFILLED] — amber */
+.badge-warn,
+.badge-manual { background: var(--warn-bg); color: var(--warn-ink); border-color: var(--warn-border); }
+/* planned slot tag (no value yet) — neutral grey */
+.badge-tag    { background: var(--neutral-bg); color: var(--neutral-ink); border-color: var(--neutral-border); }
+
+.chip {
+  display: inline-block;
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.4;
+  padding: 0.03em 0.55em;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.chip-high { background: var(--ok-bg);      color: var(--ok-ink);      border-color: var(--ok-border); }      /* High   — muted green */
+.chip-med  { background: var(--warn-bg);    color: var(--warn-ink);    border-color: var(--warn-border); }    /* Medium — muted amber */
+.chip-low  { background: var(--neutral-bg); color: var(--neutral-ink); border-color: var(--neutral-border); } /* Low    — neutral grey */
+
+/* verdict pills inside the KEY SIGNAL table */
+.verdict { font-weight: 700; }
+.verdict-confirm { color: var(--ok-ink); }
+.verdict-diverge { color: var(--bad-ink); }
+.verdict-inconc  { color: var(--color-accent); }
+.tick { color: var(--color-accent); font-weight: 700; }
+
+/* legend strip */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  align-items: center;
+  font-size: var(--fs-meta);
+  color: var(--color-muted);
+  background: var(--color-surface);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-5) 0;
+}
+.legend .legend-item { display: inline-flex; align-items: center; gap: var(--space-2); }
+
+/* =========================================================================
+   CALLOUT — one-line conclusion / verdict summary
+   ========================================================================= */
+.callout {
+  border-left: 3px solid var(--color-accent);
+  background: var(--color-accent-tint);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-4) 0;
+  font-family: var(--font-body);
+  font-size: 0.98rem;
+  line-height: 1.65;
+  color: var(--color-ink-soft);
+}
+.callout .label {
+  font-family: var(--font-ui);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--color-accent);
+  display: block;
+  margin-bottom: var(--space-1);
+}
+.callout strong { color: var(--color-ink); }
+
+/* =========================================================================
+   CHART PLACEHOLDERS  (empty containers — SVG arrives in step ④.2)
+   ========================================================================= */
+.chart-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  margin: var(--space-5) 0;
+}
+.chart-ph {
+  border: 1px dashed var(--color-rule-strong);
+  border-radius: var(--radius-lg);
+  background:
+    repeating-linear-gradient(135deg,
+      var(--color-surface) 0, var(--color-surface) 11px,
+      var(--color-surface-2) 11px, var(--color-surface-2) 22px);
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4);
+}
+.chart-ph .ph-tag {
+  align-self: flex-start;
+  font-size: var(--fs-eyebrow);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--color-accent);
+  background: var(--color-bg);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius-sm);
+  padding: 0.15em 0.55em;
+}
+.chart-ph .ph-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-faint);
+  font-size: var(--fs-meta);
+  text-align: center;
+}
+.chart-ph .ph-caption {
+  font-size: var(--fs-meta);
+  color: var(--color-muted);
+  border-top: 1px solid var(--color-rule);
+  padding-top: var(--space-2);
+}
+.chart-ph .ph-caption strong { color: var(--color-ink-soft); }
+
+/* =========================================================================
+   MISC
+   ========================================================================= */
+ul.tight { margin: var(--space-2) 0 var(--space-4); padding-left: 1.3em; }
+ul.tight li { margin: var(--space-1) 0; color: var(--color-ink-soft); font-family: var(--font-body); }
+ul.tight li code { font-family: var(--font-mono); font-size: 0.85em; color: var(--color-accent); }
+.foot {
+  margin-top: var(--space-8);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-rule);
+  font-size: var(--fs-meta);
+  color: var(--color-faint);
+}
+
+@media (max-width: 680px) {
+  .page { padding: var(--space-6) var(--space-4) var(--space-7); }
+  .chart-grid { grid-template-columns: 1fr; }
+  table.memo { font-size: 0.84rem; }
+}
+
+/* =========================================================================
+   PRINT / PDF  — light, ink-saving, no heavy fills, avoid broken tables
+   ========================================================================= */
+@media print {
+  :root { --fs-body: 10.5pt; }
+  body { font-size: 10.5pt; line-height: 1.5; }
+  .page { max-width: none; margin: 0; padding: 0; }
+  .report-head { border-top-width: 2pt; }
+  .part { margin-top: 22pt; }
+  h2.part-title, h3.sub-title, h4.minor-title { page-break-after: avoid; }
+  .table-wrap, .chart-grid, .callout { page-break-inside: avoid; }
+  table.memo { font-size: 8.6pt; }
+  table.memo thead th { background: #f2f4f6 !important; }
+  tr.is-selected td { background: #eef2f8 !important; }
+  .chart-ph { background: #fff !important; border: 1pt dashed #aab2bd; min-height: 150px; }
+  .legend { background: #fff !important; }
+  a { color: inherit; text-decoration: none; }
+  /* every status color is a light fill — already ink-safe */
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ===================================================================
+       1 · REPORT HEADER
+       =================================================================== -->
+  <header class="report-head">
+    <p class="eyebrow">Stack Anamnesis · Stablecoin Coverage</p>
+    <h1>USDC (Circle) — automated data snapshot</h1>
+    <p class="subtitle">The regulated, audited default dollar of the on-chain economy — a compliance-first float business, valued as an issuer, not a token.</p>
+    <div class="snapshot">
+      <span><span class="snap-key">Data snapshot</span> · as_of <strong>2026-05-28</strong></span>
+      <span class="sep">|</span>
+      <span>subject_type <code>stablecoin</code></span>
+      <span class="sep">|</span>
+      <span>issuer <strong>Circle</strong> · CIK <code>0001876042</code></span>
+      <span class="sep">|</span>
+      <span>position <strong>Neutral</strong> · conviction <span class="chip chip-med">Medium</span></span>
+    </div>
+  </header>
+
+  <!-- Legend strip: how to read the status system -->
+  <div class="legend">
+    <span class="legend-item"><span class="badge badge-filled">AUTO ✓ FILLED</span> auto-extracted / computed</span>
+    <span class="legend-item"><span class="badge badge-warn">⚠ NEEDS HUMAN REVIEW</span> manual / unfilled</span>
+    <span class="legend-item"><span class="badge badge-tag">planned slot</span> tag, no value yet</span>
+    <span class="legend-item">confidence
+      <span class="chip chip-high">High</span>
+      <span class="chip chip-med">Medium</span>
+      <span class="chip chip-low">Low</span>
+    </span>
+  </div>
+
+  <!-- ===================================================================
+       2 · SECTION HEADING + PROSE  (Part 1 — Thesis & Framing)
+       =================================================================== -->
+  <section class="part">
+    <p class="part-eyebrow">Part 1</p>
+    <h2 class="part-title">Thesis &amp; Framing</h2>
+
+    <h3 class="sub-title">1.1 One-sentence thesis</h3>
+    <p class="prose lead">
+      <strong>USDC is Circle's attempt to be the regulated, audited default dollar of the on-chain
+      economy — a compliance-first float business rather than a token; the key question is whether
+      that regulatory and distribution moat can keep compounding supply share against USDT and
+      bank-issued tokens once the interest-rate tailwind that funds the whole model fades.</strong>
+    </p>
+    <p class="prose">
+      USDC is the second-largest fiat-backed stablecoin and the reference "regulated dollar"
+      on-chain, with ~$76.5B circulating (<code>defillama</code>, multi-chain, as_of 2026-05-28)
+      and a ~$76.4B market cap that ranks #6 across all crypto assets (<code>coingecko</code>).
+      It matters not as a price bet — the token trades at $0.9997 — but as the clearest proxy
+      for whether regulated, transparently-reserved dollars are winning on-chain demand. Two
+      pressures converge now: supply momentum is mixed-to-soft (<strong>−1.62% over 30d</strong>),
+      and the issuer's reported FY2025 net income is <strong>negative (−$69.5M)</strong> on
+      <strong>$2.75B revenue</strong> (<code>sec_edgar</code>) — a float business barely break-even
+      at current rates is highly exposed to a Fed cutting cycle.
+    </p>
+
+    <!-- =================================================================
+         3 · EVIDENCE TABLE  (§1.4)
+         ================================================================= -->
+    <h3 class="sub-title">1.4 Evidence Table</h3>
+    <div class="table-wrap">
+      <p class="table-caption"><span class="tnum">§1.4</span> · claim → evidence, with disconfirming evidence actively sought.</p>
+      <table class="memo">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Claim</th>
+            <th>Evidence</th>
+            <th>Disconfirming evidence sought</th>
+            <th>Source</th>
+            <th>Conf.</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="idx">1</td>
+            <td>USDC is a top-tier stablecoin by size</td>
+            <td>~$76.5B circulating; ~$76.4B market cap; rank #6 across all crypto</td>
+            <td>market_cap_rank is single_source (<code>coingecko</code>) so the <em>rank</em> is Medium, but supply and cap cross-check within band</td>
+            <td>defillama / coingecko</td>
+            <td><span class="chip chip-med">Medium</span></td>
+          </tr>
+          <tr>
+            <td class="idx">2</td>
+            <td>Peg is holding</td>
+            <td>Price $0.9997, within normal ±0.3% band, agree across sources</td>
+            <td>No live depeg; but depeg <em>history</em> is [MANUAL] this run, so resilience is unproven here</td>
+            <td>coingecko (agree)</td>
+            <td><span class="chip chip-high">High</span></td>
+          </tr>
+          <tr>
+            <td class="idx">3</td>
+            <td>Demand signal is flat-to-soft on the medium window</td>
+            <td>7d +0.24%, 30d <span class="neg">−1.62%</span>, 90d +1.52% net supply change</td>
+            <td>Confirming holder/usage growth both [MANUAL]/UNFILLED, so the negative window cannot be reinterpreted as organic</td>
+            <td>defillama (single_source)</td>
+            <td><span class="chip chip-med">Medium</span></td>
+          </tr>
+          <tr>
+            <td class="idx">4</td>
+            <td>Issuer is a thin-margin, rate-exposed float business</td>
+            <td>FY2025 revenue $2.75B, <span class="neg">net income −$69.5M</span>, equity $3.33B, assets $78.7B, liabilities $75.4B</td>
+            <td>The reported net loss is itself the disconfirming-of-bull evidence; single SEC source, not cross-checked</td>
+            <td>sec_edgar (single_source)</td>
+            <td><span class="chip chip-med">Medium</span></td>
+          </tr>
+          <tr>
+            <td class="idx">5</td>
+            <td>USDC's float is mostly Ethereum-centric but multi-chain</td>
+            <td>Ethereum total supply ~$52.6B (<code>alchemy</code>) vs multi-chain ~$76.4B (<code>coingecko</code>)</td>
+            <td>Per-chain [AUTO] slot is UNFILLED, so chain-mix is inferred only from the ETH-vs-multichain gap (judgment)</td>
+            <td>alchemy / coingecko (agree)</td>
+            <td><span class="chip chip-high">High</span></td>
+          </tr>
+          <tr>
+            <td class="idx">6</td>
+            <td>Value accrues to issuer equity, not the token</td>
+            <td>Token pinned at $0.9997; issuer carries $3.33B equity on reserve-funded revenue</td>
+            <td>No token-side value capture exists (no fee switch, no token) — confirms Path C, not Path A</td>
+            <td>coingecko / sec_edgar</td>
+            <td><span class="chip chip-high">High</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===================================================================
+       4 · §5.5 KEY SIGNAL VERDICT TABLE
+       =================================================================== -->
+  <section class="part">
+    <p class="part-eyebrow">Part 5 · On-Chain Metrics</p>
+    <h2 class="part-title">5.5 Stablecoin Module</h2>
+
+    <h4 class="minor-title">★★ KEY SIGNAL — Supply Momentum: organic vs mechanical</h4>
+    <p class="prose">
+      Supply <em>slope</em> is the only demand signal a $1-pegged asset emits. The verdict cross-reads
+      three legs — supply, holders, and real usage. This run, only the supply leg is observable; the
+      holder-count and usage legs are <strong>[MANUAL]</strong>, so the verdict is provisional and
+      supply-leg-only.
+    </p>
+    <div class="table-wrap">
+      <p class="table-caption"><span class="tnum">§5.5</span> · KEY SIGNAL verdict matrix · selected row marked <span class="tick">☑</span>.</p>
+      <table class="memo">
+        <thead>
+          <tr>
+            <th>Verdict</th>
+            <th>Supply</th>
+            <th>Holders</th>
+            <th>Usage</th>
+            <th>Read</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="is-dim">
+            <td>☐ <span class="verdict verdict-confirm">CONFIRMATION</span></td>
+            <td>↑</td><td>↑</td><td>↑</td>
+            <td>Genuine demand expansion</td>
+          </tr>
+          <tr class="is-dim">
+            <td>☐ <span class="verdict verdict-diverge">DIVERGENCE</span></td>
+            <td>↑</td><td>→ / ↓</td><td>→ / ↓</td>
+            <td>Watch farming / whale; mark low confidence</td>
+          </tr>
+          <tr class="is-dim">
+            <td>☐ <span class="verdict verdict-diverge">CONTRACTION</span></td>
+            <td>↓</td><td>↓</td><td>↓</td>
+            <td>Capital leaving; investigate cause (regulation / depeg / migration)</td>
+          </tr>
+          <tr class="is-selected">
+            <td><span class="tick">☑</span> <span class="verdict verdict-inconc">INCONCLUSIVE — supply-leg-only</span></td>
+            <td>mixed<br><span style="font-size:.85em;color:var(--color-muted)">7d ↑ / 30d ↓ / 90d ↑</span></td>
+            <td><span class="badge badge-warn">⚠ MANUAL</span><br><span style="font-size:.85em;color:var(--color-muted)">not observable</span></td>
+            <td><span class="badge badge-warn">⚠ MANUAL</span><br><span style="font-size:.85em;color:var(--color-muted)">not observable</span></td>
+            <td>Supply slope is mixed-to-soft (30d −1.62%); holder and real-usage legs are unavailable, so neither CONFIRMATION nor DIVERGENCE can be asserted. Verdict is provisional and supply-leg-only.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout">
+      <span class="label">One-line conclusion</span>
+      Supply momentum is mixed — modestly positive over 7d (+0.24%) and 90d (+1.52%) but
+      <strong>negative over 30d (−1.62%)</strong> — and because the holder-count and real-usage
+      legs are both [MANUAL] this run, the KEY SIGNAL is <strong>supply-leg-only and inconclusive</strong>:
+      we cannot confirm organic demand, and we do not claim DIVERGENCE without seeing the holder/usage
+      legs roll over.
+    </div>
+
+    <!-- ===============================================================
+         5 · STATUS BADGES IN CONTEXT  (§5.5 A — Supply & Distribution)
+         =============================================================== -->
+    <h4 class="minor-title">A. Supply &amp; Distribution Dynamics</h4>
+    <ul class="tight">
+      <li>Total supply / mint / burn / net flow <span class="badge badge-filled">AUTO ✓ FILLED: DefiLlama stablecoins</span>
+        <ul class="tight">
+          <li><strong>single-chain (ethereum)</strong> — 52.57B USDC · source <code>alchemy</code> · as_of 2026-05-27 · confidence <span class="chip chip-high">High</span> (agree)</li>
+          <li><strong>cross-chain (multi_chain)</strong> — 76.38B USDC · source <code>coingecko</code> · as_of 2026-05-27 · confidence <span class="chip chip-high">High</span> (agree)</li>
+        </ul>
+      </li>
+      <li>Net 7d / 30d / 90d supply change <span class="badge badge-filled">SEMI-AUTO ✓ COMPUTED: DefiLlama historical</span>
+        <ul class="tight">
+          <li><strong>7d</strong>: +$180.93M (+0.24%) · up · 2026-05-21→2026-05-28 · source <code>defillama</code> · confidence <span class="chip chip-med">Medium</span> (single_source)</li>
+          <li><strong>30d</strong>: −$1.26B (−1.62%) · down · 2026-04-28→2026-05-28 · source <code>defillama</code> · confidence <span class="chip chip-med">Medium</span> (single_source)</li>
+          <li><strong>90d</strong>: +$1.14B (+1.52%) · up · 2026-02-27→2026-05-28 · source <code>defillama</code> · confidence <span class="chip chip-med">Medium</span> (single_source)</li>
+        </ul>
+      </li>
+      <li>Per-chain supply breakdown (which ecosystems are pulling growth) <span class="badge badge-tag">AUTO: DefiLlama by chain</span> → <span class="badge badge-warn">⚠ UNFILLED [AUTO]</span> — no reconciled value for this slot (left flagged, NOT fabricated)</li>
+      <li>Native vs bridged supply <span class="badge badge-tag">SEMI-AUTO: DefiLlama + issuer docs</span> → <span class="badge badge-warn">⚠ NEEDS HUMAN REVIEW</span> — compute / verify manually before publish</li>
+      <li>Historical depeg events (depth + recovery time) <span class="badge badge-manual">MANUAL: incident research</span> → <span class="badge badge-warn">⚠ MANUAL</span> — researcher must fill: incident research</li>
+    </ul>
+
+    <!-- ===============================================================
+         7 · CHART PLACEHOLDERS  (SVG arrives in step ④.2)
+         =============================================================== -->
+    <div class="chart-grid">
+      <figure class="chart-ph">
+        <span class="ph-tag">Chart slot ④.2</span>
+        <div class="ph-body">inline-SVG renders here</div>
+        <figcaption class="ph-caption">
+          <strong>Supply-momentum overlay</strong> — net supply change 7d / 30d / 90d
+          (+0.24% / −1.62% / +1.52%, <code>defillama</code>). Holder &amp; usage lines [MANUAL].
+        </figcaption>
+      </figure>
+      <figure class="chart-ph">
+        <span class="ph-tag">Chart slot ④.2</span>
+        <div class="ph-body">inline-SVG renders here</div>
+        <figcaption class="ph-caption">
+          <strong>Issuer financials (FY2025)</strong> — revenue $2.75B, net income −$69.5M,
+          equity $3.33B, assets $78.7B vs liabilities $75.4B (<code>sec_edgar</code>).
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ===================================================================
+       6 · §9.2 RISK MATRIX
+       =================================================================== -->
+  <section class="part">
+    <p class="part-eyebrow">Part 9 · Catalysts &amp; Risks</p>
+    <h2 class="part-title">9.2 Risk Matrix</h2>
+    <div class="table-wrap">
+      <p class="table-caption"><span class="tnum">§9.2</span> · risk type → observable trigger / magnitude, with likelihood and impact.</p>
+      <table class="memo">
+        <thead>
+          <tr>
+            <th>Risk Type</th>
+            <th>Specific Risk</th>
+            <th>Observable trigger / magnitude</th>
+            <th>Likelihood</th>
+            <th>Impact</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Market</strong></td>
+            <td>Soft demand / supply outflow</td>
+            <td>30d net supply change stays negative (now <span class="neg">−1.62% / −$1.26B</span>); trigger: negative for 2 consecutive months</td>
+            <td><span class="chip chip-med">Medium</span></td>
+            <td><span class="chip chip-med">Medium</span></td>
+          </tr>
+          <tr>
+            <td><strong>Execution</strong></td>
+            <td>Issuer fails to rationalize cost base</td>
+            <td>Another reported net loss after FY2025 −$69.5M</td>
+            <td><span class="chip chip-med">Medium</span></td>
+            <td><span class="chip chip-med">Medium</span></td>
+          </tr>
+          <tr>
+            <td><strong>Smart Contract</strong></td>
+            <td>Token-contract exploit</td>
+            <td>Critical CVE / drained pool</td>
+            <td><span class="chip chip-low">Low</span></td>
+            <td><span class="chip chip-high">High</span></td>
+          </tr>
+          <tr>
+            <td><strong>Regulatory</strong></td>
+            <td>Adverse regulatory action</td>
+            <td>License loss / forced delisting in a major market</td>
+            <td><span class="badge badge-warn">⚠ MANUAL</span></td>
+            <td><span class="chip chip-high">High</span></td>
+          </tr>
+          <tr>
+            <td><strong>Liquidity / Peg</strong></td>
+            <td>Depeg / slow recovery</td>
+            <td>Peg deviation that takes <strong>&gt;72h</strong> to recover (currently $0.9997, no live depeg)</td>
+            <td><span class="chip chip-low">Low</span></td>
+            <td><span class="chip chip-high">High</span></td>
+          </tr>
+          <tr>
+            <td><strong>Competitive</strong></td>
+            <td>Share loss to USDT / bank-tokens</td>
+            <td>Sustained negative supply slope while peers grow</td>
+            <td><span class="chip chip-med">Medium</span></td>
+            <td><span class="chip chip-high">High</span></td>
+          </tr>
+          <tr>
+            <td><strong>Ecosystem concentration</strong></td>
+            <td>Over-reliance on one chain</td>
+            <td>~$52.6B of float on Ethereum (<code>alchemy</code>); chain mix [MANUAL]</td>
+            <td><span class="chip chip-med">Medium</span></td>
+            <td><span class="chip chip-med">Medium</span></td>
+          </tr>
+          <tr>
+            <td><strong>Reserve / Banking</strong></td>
+            <td>Single-bank exposure (SVB lesson)</td>
+            <td>Single-bank exposure &gt; ~30% of reserves — <strong>[MANUAL] this run, cannot quantify</strong></td>
+            <td><span class="badge badge-warn">⚠ MANUAL</span></td>
+            <td><span class="chip chip-high">High</span></td>
+          </tr>
+          <tr>
+            <td><strong>Interest-rate (issuer)</strong></td>
+            <td>Rate cuts compress float income</td>
+            <td>Fed cutting cycle; take falls below ~3.6% realized while already at net loss</td>
+            <td><span class="chip chip-med">Med–High</span></td>
+            <td><span class="chip chip-high">High</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="foot">
+    Stack Anamnesis · YYFoundry / NYU Blockchain Lab — Research SOP v2 · representative design slice ·
+    data as_of 2026-05-28 · all figures lifted from <code>usdc_20260605T154532Z</code> bundle.
+  </footer>
+
+</div>
+</body>
+</html>
