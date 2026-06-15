@@ -899,6 +899,21 @@ h5, h6 {
 }
 .chart-ph .chart-body { width: 100%; margin: var(--space-2) 0; }
 .chart-ph .chart-body svg { display: block; width: 100%; height: auto; }
+
+/* ---- provenance v1 (TD-051): a subtle dashed underline tells the reader a
+   number is traceable; the native title tooltip shows "Company · as of DATE" on
+   hover. No JS, no URL. The "Data Sources" footer lists the distinct sources. --- */
+.src { border-bottom: 1px dashed var(--color-rule-strong); cursor: help; }
+.data-sources { margin: var(--space-6) 0 var(--space-4); }
+.data-sources .part-eyebrow { margin-bottom: var(--space-2); }
+.data-sources .src-list { list-style: none; margin: 0; padding-left: 0; }
+.data-sources .src-list li {
+  margin: var(--space-1) 0;
+  color: var(--color-ink-soft);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+}
+.data-sources .src-name { color: var(--color-ink); font-weight: 600; }
 """.strip()
 
 
@@ -1013,12 +1028,24 @@ def render_html(markdown_text: str, *, title: str = None, facts: dict = None) ->
     fabricated chart. ``facts=None`` (the default) emits NO chart section, so
     existing callers are unaffected. The renderer stays pure/offline — ``facts``
     is read from memory, never from disk."""
+    # provenance helpers imported here so the module is only pulled when rendering
+    # (mirrors the charts lazy-import); all three no-op when facts is None.
+    from analysis_layer.render.provenance import (
+        build_prov_index, data_sources_section, wrap_body_numbers,
+    )
+
     md = strip_coaching(markdown_text)
     md = md.replace("⭐", "★")  # KEY SIGNAL marker — display normalisation only
     doc_title = _doc_title(md, title)
     header = _header_block(md, doc_title)
     charts = _chart_section(facts)
     body = _markdown_to_body(md)
+    # provenance v1 (TD-051): native source/as-of tooltip on traceable numbers +
+    # a "Data Sources" footer. Both facts-driven; facts=None → no-ops (the index is
+    # None and the section is ""), so existing callers are unaffected. The wrap is
+    # tag-safe (text segments only) and the SVG charts are a separate fragment.
+    body = wrap_body_numbers(body, build_prov_index(facts))
+    sources = data_sources_section(facts)
     return (
         "<!DOCTYPE html>\n"
         '<html lang="en">\n<head>\n'
@@ -1032,6 +1059,7 @@ def render_html(markdown_text: str, *, title: str = None, facts: dict = None) ->
         f"{_LEGEND}\n"
         f"{charts}"
         f"{body}\n"
+        f"{sources}"
         "</div>\n"
         "</body>\n</html>\n"
     )

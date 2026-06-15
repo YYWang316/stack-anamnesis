@@ -391,6 +391,22 @@ def test_charts_self_contained():
     assert "<link" not in html
 
 
+# --------------------------------------------------------------------------- #
+# provenance v1 (TD-051) — render_html wiring (full coverage in test_provenance)
+# --------------------------------------------------------------------------- #
+def test_provenance_wired_when_facts_present():
+    """facts= → the Data Sources footer is emitted (provenance.py is wired in)."""
+    html = render_html(SYNTHETIC, facts=FACTS)
+    assert 'class="data-sources"' in html
+
+
+def test_provenance_absent_when_facts_none():
+    """facts=None (default) → no Data Sources footer, no .src spans (unchanged)."""
+    html = render_html(SYNTHETIC)
+    assert 'class="data-sources"' not in html
+    assert '<span class="src"' not in html
+
+
 def test_charts_deterministic():
     assert render_html(SYNTHETIC, facts=FACTS) == render_html(SYNTHETIC, facts=FACTS)
 

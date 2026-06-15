@@ -893,6 +893,24 @@ The template's actual `[MANUAL]` section names (Part 5.5 Stablecoin module, for 
 
 ---
 
+## TD-051 — provenance v1 (renderer): source/as-of tooltips + Data Sources footer — BUILT 2026-06-15
+
+**Status:** BUILT 2026-06-15 (v1 = company + date; clickable source links OUT of scope — see below). New pure module `analysis_layer/render/provenance.py` (mirrors `charts.py`), wired into `render_html` via `facts=`.
+
+**What it does (two facts-driven pieces, both PURE / self-contained / no-network / deterministic).**
+1. **Data Sources footer** — `data_sources_section(facts)` appends a block listing the DISTINCT sources that actually back a value (`metrics[].source` / `supply_momentum[].source` / each `issuer_financials` cell's `source`), mapped to human-readable company names (`coingecko→CoinGecko`, `sec_edgar→SEC EDGAR`, `defillama→DefiLlama`, `alchemy→Alchemy`, `etherscan→Etherscan`, `coinmarketcap→CoinMarketCap`; unknown slug → title-cased) with the as-of date or `min – max` range. Sorted by display name (deterministic).
+2. **Hover tooltip on traceable numbers** — `build_prov_index(facts)` + `wrap_body_numbers(body, index)`. The value→source map is built from the SAME canonical renderings the ⑤.1 numbers-trace gate uses (`_metric_forms` / `_signed_usd_forms` / the filler-exact `{:+.2f}%`, reused from `analysis_layer.qc.numbers`), so the keys match what's actually in the report. Each unambiguous number is wrapped `<span class="src" title="CoinGecko · as of 2026-05-27">$76.5B</span>`; a subtle dashed underline (`.src` CSS, added to `_SUPPLEMENTAL_CSS` so the `_DESIGN_CSS` SHA pin is untouched) signals "hover me".
+
+**The honesty rule (over coverage).** A display string is wrapped ONLY when it maps to EXACTLY ONE distinct (source, as-of) pair. A string produced by two metrics with different sources is SKIPPED — never attach a possibly-wrong source. The index also carries a Unicode-minus variant of each key so the filler's ASCII `-` matches the writer's `−` in prose.
+
+**Tag-safe insertion.** The wrap runs on the body via a tag-aware split (`re.split(r"(<[^>]*>)")`, text segments only), so it never lands inside a tag, attribute, or SVG; the inline SVG charts are a separate fragment never passed to it. `facts=None` → no footer, no wrapping (existing callers unaffected).
+
+**★ Constraint held — ④.3 still passes UNCHANGED.** Titles carry ONLY "Company · as of DATE" — no URLs, no `http(s)://` / `<script>` / `<link>` / `src=` / `@import` / `cdn`. `validate_report_html` was NOT modified and returns `[]` on the real re-rendered USDC sample (148 tooltip spans + the footer). Tests: `tests/analysis_layer/test_provenance.py` (14 — Data Sources distinct/sorted/range/unknown-slug, traceable wrap with source+as-of, Unicode-minus, untraceable-stays-bare, ambiguous-skipped, tag-safety, self-contained + ④.3, determinism, facts=None, subject-agnostic ZYX, real-sample e2e skip-guarded) + 2 wiring asserts in `test_render_html.py`. Full suite 479 passed / 4 skipped.
+
+**OUT of scope (v1 deliberately stops here).** Clickable source LINKS (the SEC filing URL, etherscan contract page, DefiLlama page) are NOT included — a displayed `href` URL trips ④.3's `https://` ban, and surfacing it requires the gate-refinement discussed separately (distinguish "user-clickable citation" from "auto-loaded external resource") PLUS threading real URLs/accessions through the bundle (the data layer currently keeps only the bare `source` name — no URL field). That is a larger, stance-changing piece, tracked as future work, not v1.
+
+---
+
 ## B.0 #16 MEMORY.md staging — pending lessons
 
 Lessons surfaced during B.0 sub-phase work that should land in `MEMORY.md` when deliverable #16 (MEMORY.md rewrite for the 4-gate set) is executed. This is a recurring slot — append new lessons as they emerge.
