@@ -226,6 +226,57 @@ def test_usdt_live_path_smoke_issuer_absent(tmp_path):
     assert path.with_suffix(".html").exists()
 
 
+def _have_eth_envelopes() -> bool:
+    """True when ETH's coingecko/cmc envelopes are on disk (require a --fetch)."""
+    return (any((RAW / "coingecko").glob("eth_*.json"))
+            and any((RAW / "coinmarketcap").glob("eth_*.json")))
+
+
+def test_eth_cross_type_routing_data_only():
+    """Binding a NON-stablecoin (ETH, subject_type l1) is DATA-ONLY: on-chain +
+    SEC patterns are None (native coin / no issuer → those sources skip), market
+    aggregators apply, and the fetch set is coingecko+cmc only (defillama's
+    stablecoin endpoint excluded)."""
+    from analysis_layer.fetch_front import SOURCES_BY_TYPE
+    sref = orchestrate._resolve_or_raise("ETH")
+    assert orchestrate._envelope_pattern("alchemy", sref) is None     # native
+    assert orchestrate._envelope_pattern("etherscan", sref) is None   # native
+    assert orchestrate._envelope_pattern("sec_edgar", sref) is None   # no issuer
+    assert orchestrate._envelope_pattern("coingecko", sref) == "eth_*.json"
+    assert [s.name for s in SOURCES_BY_TYPE["l1"]] == ["coingecko", "coinmarketcap"]
+
+
+def test_eth_live_path_smoke_l1_spot_only(tmp_path):
+    """SMOKE (not rigorous quality): the live v3 path runs on a NON-stablecoin (ETH)
+    without error — the facts table renders ONLY the present sub-table (spot metrics);
+    supply-momentum + issuer-financials are absent (no L1 series, no issuer); the
+    bundle carries subject_type l1 (→ writer stacks class B, not the stablecoin
+    module); ④.3 + ⑤.1 pass; ZERO stablecoin-data contamination. Skips without
+    envelopes (require: orchestrate ETH --fetch)."""
+    if not _have_eth_envelopes():
+        pytest.skip("no ETH envelopes on disk (run: orchestrate ETH --fetch)")
+    import json
+    from analysis_layer.qc.numbers import check_numbers_trace
+
+    path = orchestrate.research("ETH", out_dir=tmp_path, html=True, bundle=True)
+    md = path.read_text(encoding="utf-8")
+    facts = json.loads(path.with_suffix(".facts.json").read_text(encoding="utf-8"))
+
+    # cross-type routing: l1, not stablecoin; spot present, stablecoin/issuer legs absent
+    assert facts["subject_type"] == "l1"
+    assert facts["supply_momentum"] == [] and facts["issuer_financials"] is None
+    assert facts["sources"] == ["coingecko", "coinmarketcap"]
+    assert "**Spot metrics**" in md
+    assert "**Supply momentum**" not in md and "**Issuer financials**" not in md
+    # ETH's OWN data, no stablecoin-peer contamination in the facts table (Part 5)
+    part5 = md.split("## Part 5", 1)[1].split("## Part 6", 1)[0]
+    assert "ETH" in part5
+    assert not any(x in part5 for x in ("USDC", "USDT", "Circle", "stablecoin"))
+    # gates
+    assert check_numbers_trace(md, facts) == []
+    assert path.with_suffix(".html").exists()
+
+
 def test_research_is_deterministic_in_content(tmp_path):
     """Two runs on the same envelopes → byte-identical report CONTENT (only the
     filename's UTC stamp may differ)."""

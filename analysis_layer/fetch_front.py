@@ -127,10 +127,31 @@ _STABLECOIN_SOURCES: Tuple[SourceSpec, ...] = (
                _sec_subject, needs_email=True),
 )
 
+# L1 / chain native coin set (TD-046 cross-type, e.g. ETH). ONLY the sources that
+# genuinely apply to a native coin: the market aggregators (CoinGecko / CMC) resolve
+# price · market cap · total supply · volume by name. DELIBERATELY EXCLUDED:
+#   * DefiLlama — its /stablecoins endpoint does not cover a native coin; a chain-TVL
+#     read would need a NEW extractor (the analysis-side defillama extractor parses the
+#     stablecoin supply SERIES), so it is left out, not forced. (follow-on, TD-046.)
+#   * Etherscan / Alchemy — these read an ERC-20 contract's totalSupply; a native coin
+#     has no eth_contract, so the contract-keyed on-chain sources skip (orchestrate's
+#     _envelope_pattern already returns None without a contract).
+#   * SEC EDGAR — no issuer / no CIK, already skipped (the USDT generalization).
+# The fetchers' own CLI vocabulary is "chain" (their SUBJECT_TYPES), distinct from the
+# orchestrator's subject_type — mirrors how the stablecoin set uses "stablecoin_issuer".
+_L1_SOURCES: Tuple[SourceSpec, ...] = (
+    SourceSpec("coingecko", "coingecko_fetch.py", "chain", lambda s: s.subject),
+    SourceSpec("coinmarketcap", "coinmarketcap_fetch.py", "chain", lambda s: s.subject),
+)
+
 # subject_type (the orchestrator's) -> the ordered fetcher set. Extensible: add a
-# row to cover chain / protocol subjects.
+# row to cover a new subject_type. ``l1`` and ``chain`` share the L1 set (both map to
+# playbook class B); a native coin whose supply momentum / TVL needs a chain series is
+# the next follow-on (no such fetcher yet).
 SOURCES_BY_TYPE: Dict[str, Tuple[SourceSpec, ...]] = {
     "stablecoin": _STABLECOIN_SOURCES,
+    "l1": _L1_SOURCES,
+    "chain": _L1_SOURCES,
 }
 
 

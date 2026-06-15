@@ -83,6 +83,23 @@ def test_resolve_usdt_second_binding_no_sec_cik():
     assert "sec_cik" not in ids   # deliberately absent → SEC skipped end-to-end
 
 
+def test_resolve_eth_first_cross_type_l1_no_contract_no_issuer():
+    """ETH is the FIRST non-stablecoin binding (TD-046) — subject_type ``l1`` (→
+    playbook class B), a NATIVE coin so NO eth_contract (on-chain sources skip), NO
+    issuer / sec_cik (SEC skips). Proves the registry holds a cross-type subject."""
+    ref = subject_ref.resolve_subject("ETH")
+    assert isinstance(ref, SubjectRef)
+    assert ref.subject == "ETH"
+    assert ref.subject_type == "l1"        # NOT stablecoin → class B, not A
+    assert ref.decimals == 18
+    assert ref.issuer is None
+    ids = ref.identifiers
+    assert ids["coingecko"] == "ethereum"
+    assert ids["coinmarketcap"] == "1027"
+    assert "eth_contract" not in ids       # native → contract-keyed sources skip
+    assert "sec_cik" not in ids            # no issuer → SEC skips
+
+
 def test_lookup_is_case_insensitive():
     ref = subject_ref.resolve_subject("USDC")
     assert subject_ref.resolve_subject("usdc") == ref

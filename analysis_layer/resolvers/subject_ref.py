@@ -89,6 +89,26 @@ _REGISTRY: Dict[str, SubjectRef] = {
             # NB: no sec_cik — Tether is not SEC-registered (issuer financials absent)
         },
     ),
+    # ETH — FIRST non-stablecoin / cross-type binding (TD-046). subject_type ``l1``
+    # routes to playbook class B (the L1 module), NOT the stablecoin path. As a NATIVE
+    # coin it has NO eth_contract (so the contract-keyed on-chain sources Alchemy /
+    # Etherscan skip), NO issuer / sec_cik (SEC skips), and DefiLlama's stablecoin
+    # endpoint does not apply — its market data (price · market cap · total supply ·
+    # volume · rank) resolves via CoinGecko / CMC by name. There is no stablecoin
+    # circulating-supply series, so the supply-momentum / KEY SIGNAL leg is simply
+    # ABSENT this run (field-driven). decimals 18 is documented but unused here (no
+    # on-chain decode). The per-source ids are grounding (fetchers resolve by name).
+    "eth": SubjectRef(
+        subject="ETH",
+        subject_type="l1",
+        decimals=18,
+        issuer=None,
+        identifiers={
+            "coingecko": "ethereum",          # /search resolves ETH -> ethereum
+            "coinmarketcap": "1027",          # CMC id for ETH
+            # no eth_contract (native), no eth_chain, no sec_cik, no defillama
+        },
+    ),
 }
 
 
