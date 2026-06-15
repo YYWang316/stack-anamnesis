@@ -18,7 +18,7 @@
 
 ### 0.1 Output Type & Depth
 
-The chosen output type determines which sections are required and which may be omitted:
+The chosen output type determines which sections are required and which may be omitted. The **deliverable keeps ONLY the selected output-type row** below (the other rows are the menu, not report body — drop them once a type is chosen):
 
 | Output Type | Length | Must-have sections | Tone & Audience |
 |-------------|--------|---------------------|------------------|
@@ -118,6 +118,8 @@ Native app count & quality / TVL · activity concentration (what share do the to
 
 <!-- MODULE: metrics -->
 
+<!-- MODULE: metrics-analysis -->
+
 ---
 
 ## Part 6 — Competitive Landscape
@@ -166,6 +168,8 @@ Does it win on better technology or stronger distribution? After the tech is cop
 |----------|-----------------|------------------|------------|
 
 ### 9.2 Risk matrix
+
+Module-specific risk rows (below) **append as new rows to this single table** — do not start a second risk table.
 
 | Risk Type | Specific Risk | Observable trigger / magnitude | Likelihood | Impact |
 |-----------|--------------|--------------------------------|------------|--------|

@@ -38,7 +38,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Mapping, Optional, Tuple
+from types import SimpleNamespace
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from analysis_layer.contract import ReconciledValue, SubjectRef
 
@@ -698,3 +699,171 @@ def fill_template_file(
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(result, encoding="utf-8")
     return result
+
+
+# --------------------------------------------------------------------------- #
+# 2a filler — the v3 go-live "machine places the numbers" step (TD-050)
+# --------------------------------------------------------------------------- #
+# Renders the facts bundle (build_facts_bundle output, TD-041) into the metrics
+# facts table and injects it at the v3 skeleton's <!-- MODULE: metrics --> anchor.
+# Reuses this module's value formatters (render_value / _signed_usd) so every
+# number matches the ⑤.1 numbers-trace gate (qc/numbers.py) + the provenance forms
+# (render/provenance.py). FIELD-DRIVEN + graceful-missing like charts.py: only the
+# sub-tables whose data is present render; nothing is hardcoded to a subject. PURE
+# and deterministic: same (skeleton, facts) -> byte-identical output.
+_METRICS_ANCHOR = "<!-- MODULE: metrics -->"
+# The injection anchor is a STANDALONE comment line. Matching it line-anchored (a)
+# avoids the substring trap (``<!-- MODULE: metrics-analysis -->`` is a different,
+# longer line) AND (b) leaves the anchor's PROSE mentions in the skeleton's own
+# VERSION NOTE / ANCHOR CONVENTION blockquotes untouched (those are documentation
+# the writer drops, not injection points).
+_METRICS_ANCHOR_LINE = re.compile(r"(?m)^<!-- MODULE: metrics -->[ \t]*$")
+
+# Bundle keys under issuer_financials that are provenance/meta, not a traced value.
+_FINANCIAL_META_KEYS = frozenset({"issuer", "fiscal_year"})
+# Canonical line order for the issuer financials sub-table (deterministic regardless
+# of the bundle dict's key order); any extra non-meta cells follow, sorted.
+_FINANCIAL_ORDER = ("revenues", "net_income", "assets", "liabilities", "equity")
+
+
+def _bundle_date(as_of: Any) -> str:
+    """An ISO ``as_of`` timestamp -> its ``YYYY-MM-DD`` date part; ``""`` if absent."""
+    if not isinstance(as_of, str) or not as_of:
+        return ""
+    return as_of.split("T", 1)[0][:10]
+
+
+def _render_bundle_value(value: Any, unit: str, metric: str, subject: str) -> str:
+    """A bundle value -> the filler's EXACT display string, by reusing
+    ``render_value`` through a lightweight shim (the bundle carries plain dict cells,
+    not ``ReconciledValue``s). Guarantees the printed number is one the ⑤.1 gate and
+    the provenance index already recognise."""
+    rv = SimpleNamespace(value=value, unit=unit, metric=metric)
+    return render_value(rv, SimpleNamespace(subject=subject))
+
+
+def _spot_metrics_table(metrics: Any, subject: str) -> str:
+    """The spot-metrics sub-table, or ``""`` when no metric carries a value."""
+    rows: List[str] = []
+    for m in metrics or ():
+        if not isinstance(m, Mapping):
+            continue
+        value = m.get("value")
+        if value is None:
+            continue
+        rows.append(
+            f"| {m.get('metric', '?')} | {m.get('scope', '') or ''} | "
+            f"{_render_bundle_value(value, m.get('unit', ''), m.get('metric', '?'), subject)} | "
+            f"{m.get('source', '') or ''} | {_bundle_date(m.get('as_of'))} | "
+            f"{m.get('confidence', '') or ''} |"
+        )
+    if not rows:
+        return ""
+    return (
+        "**Spot metrics**\n\n"
+        "| Metric | Scope | Value | Source | As of | Confidence |\n"
+        "|--------|-------|-------|--------|-------|------------|\n"
+        + "\n".join(rows)
+        + "\n"
+    )
+
+
+def _supply_momentum_table(momentum: Any) -> str:
+    """The supply-momentum sub-table, or ``""`` when no window carries a value. The
+    percent uses the ⑤.1-exact ``{:+.2f}%`` form; the absolute change reuses
+    ``_signed_usd`` (sign before the ``$``)."""
+    rows: List[str] = []
+    for sm in momentum or ():
+        if not isinstance(sm, Mapping):
+            continue
+        pct = sm.get("net_change_pct")
+        abs_change = sm.get("net_change_abs")
+        if not isinstance(pct, (int, float)) and not isinstance(abs_change, (int, float)):
+            continue
+        pct_s = f"{float(pct):+.2f}%" if isinstance(pct, (int, float)) else ""
+        abs_s = _signed_usd(float(abs_change)) if isinstance(abs_change, (int, float)) else ""
+        rows.append(
+            f"| {sm.get('window', '?')} | {pct_s} | {abs_s} | "
+            f"{sm.get('direction', '') or ''} | {sm.get('source', '') or ''} | "
+            f"{sm.get('confidence', '') or ''} |"
+        )
+    if not rows:
+        return ""
+    return (
+        "**Supply momentum**\n\n"
+        "| Window | Net change % | Net change abs | Direction | Source | Confidence |\n"
+        "|--------|--------------|----------------|-----------|--------|------------|\n"
+        + "\n".join(rows)
+        + "\n"
+    )
+
+
+def _issuer_financials_table(financials: Any) -> str:
+    """The issuer-financials sub-table, or ``""`` when absent / no non-null cell.
+    Field-driven: a bundle with no ``issuer_financials`` simply yields no table."""
+    if not isinstance(financials, Mapping):
+        return ""
+    keys = [k for k in _FINANCIAL_ORDER if k in financials]
+    keys += sorted(
+        k for k in financials
+        if k not in _FINANCIAL_META_KEYS and k not in _FINANCIAL_ORDER
+    )
+    rows: List[str] = []
+    for key in keys:
+        cell = financials.get(key)
+        if not isinstance(cell, Mapping):
+            continue
+        value = cell.get("value")
+        if value is None:
+            continue
+        rows.append(
+            f"| {key} | "
+            f"{_render_bundle_value(value, cell.get('unit', 'USD'), key, '')} | "
+            f"{cell.get('source', '') or ''} | {_bundle_date(cell.get('as_of'))} |"
+        )
+    if not rows:
+        return ""
+    bits = []
+    if financials.get("issuer"):
+        bits.append(str(financials["issuer"]))
+    if financials.get("fiscal_year") is not None:
+        bits.append(f"FY{financials['fiscal_year']}")
+    caption = f" ({' · '.join(bits)})" if bits else ""
+    return (
+        f"**Issuer financials**{caption}\n\n"
+        "| Line | Value | Source | As of |\n"
+        "|------|-------|--------|-------|\n"
+        + "\n".join(rows)
+        + "\n"
+    )
+
+
+def build_metrics_table(facts: Mapping[str, Any]) -> str:
+    """The whole machine facts table (spot · momentum · issuer financials) as
+    markdown. Only the sub-tables whose data is present appear; an all-empty bundle
+    yields an honest one-line note. PURE/deterministic, subject-agnostic."""
+    subject = str(facts.get("subject") or "")
+    blocks = [
+        _spot_metrics_table(facts.get("metrics"), subject),
+        _supply_momentum_table(facts.get("supply_momentum")),
+        _issuer_financials_table(facts.get("issuer_financials")),
+    ]
+    blocks = [b for b in blocks if b]
+    if not blocks:
+        return "_No machine-readable metrics in this bundle._"
+    return "\n".join(blocks).rstrip()
+
+
+def fill_metrics_module(skeleton_markdown: str, facts: Mapping[str, Any]) -> str:
+    """2a filler: replace the v3 skeleton's ``<!-- MODULE: metrics -->`` anchor with
+    the machine facts table built from ``facts``. ONLY that anchor is consumed —
+    ``<!-- MODULE: metrics-analysis -->`` and every other module anchor are left for
+    the writer/renderer (an anchor never consumed still fails loud at render).
+
+    GOTCHA guarded: only the STANDALONE anchor LINE is replaced (via a line-anchored
+    regex + a verbatim replacement function). That avoids the substring trap
+    (``metrics-analysis`` is a different line) AND leaves the anchor's prose mentions
+    in the skeleton's own VERSION NOTE / ANCHOR CONVENTION blockquotes untouched.
+    PURE/deterministic."""
+    table = build_metrics_table(facts)
+    return _METRICS_ANCHOR_LINE.sub(lambda _m: table, skeleton_markdown)
