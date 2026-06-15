@@ -217,10 +217,10 @@ def test_real_usdc_reconciliation_structure_and_report(capsys):
     decimals = resolve_subject("USDC").decimals  # 6, via the trunk's resolver
 
     inputs = []
-    a = _first_extracted("alchemy", "*.json", lambda e: alchemy.decode_total_supply(e, decimals))
+    a = _first_extracted("alchemy", "*0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48*.json", lambda e: alchemy.decode_total_supply(e, decimals))
     if a:
         inputs.append(a)
-    es = _first_extracted("etherscan", "*.json", lambda e: etherscan.extract_supply(e, decimals))
+    es = _first_extracted("etherscan", "*0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48*.json", lambda e: etherscan.extract_supply(e, decimals))
     if es:
         inputs.append(es)
     cg = _first_extracted("coingecko", "usdc_*.json", coingecko.extract_spot_metrics)
@@ -269,12 +269,18 @@ def test_real_usdc_reconciliation_structure_and_report(capsys):
         assert sc.source_used == expected_primary
         primary_ev = next(i for i in sc.inputs if i.source == sc.source_used)
         assert sc.value == primary_ev.value          # not averaged
-        # if both on-chain sources present, the as_of gap must be detected/widened
+        # if both on-chain sources present, the cross-check's contemporaneity flag
+        # must be CONSISTENT with the real as_of gap (which envelope pair is on disk
+        # is incidental — pre-multi-subject this happened to be ~2 days apart; with
+        # contract-pinned selection it may be contemporaneous). When non-contemporaneous,
+        # the band must widen for drift.
         if {"alchemy", "etherscan"} <= {i.source for i in sc.inputs}:
             cc = sc.audit["cross_checks"][0]
-            assert cc["contemporaneous"] is False     # ~2 days apart
-            assert cc["gap_days"] is not None and cc["gap_days"] > 0.04
-            assert cc["band"] > agg.BAND_SINGLE_CHAIN_SUPPLY  # widened by drift
+            assert isinstance(cc["contemporaneous"], bool)
+            assert cc["gap_days"] is not None and cc["gap_days"] >= 0
+            if not cc["contemporaneous"]:
+                assert cc["gap_days"] > 0.04
+                assert cc["band"] > agg.BAND_SINGLE_CHAIN_SUPPLY  # widened by drift
 
     if mc is not None:
         assert 65e9 < mc.value < 90e9

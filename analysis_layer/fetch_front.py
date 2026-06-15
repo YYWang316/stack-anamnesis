@@ -79,6 +79,16 @@ def _chain_arg(sref: SubjectRef) -> List[str]:
     return ["--chain-id", str(_chain_id(sref))]
 
 
+def _sec_subject(sref: SubjectRef) -> Optional[str]:
+    """The SEC fetch's ``--subject`` (the issuer name) — but ONLY when the subject
+    is SEC-registered, i.e. the registry bound a ``sec_cik``. A stablecoin whose
+    issuer is not SEC-registered (e.g. Tether) has no CIK, so SEC is skipped with a
+    note rather than fetched against an issuer EDGAR cannot resolve."""
+    if not (sref.identifiers or {}).get("sec_cik"):
+        return None
+    return sref.issuer
+
+
 @dataclass(frozen=True)
 class SourceSpec:
     """How to invoke one B.1 fetcher for a subject.
@@ -114,7 +124,7 @@ _STABLECOIN_SOURCES: Tuple[SourceSpec, ...] = (
     SourceSpec("alchemy", "alchemy_fetch.py", "stablecoin_issuer",
                _eth_contract, _chain_arg),
     SourceSpec("sec_edgar", "sec_edgar_fetch.py", "stablecoin_issuer",
-               lambda s: s.issuer, needs_email=True),
+               _sec_subject, needs_email=True),
 )
 
 # subject_type (the orchestrator's) -> the ordered fetcher set. Extensible: add a

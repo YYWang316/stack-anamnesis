@@ -314,10 +314,10 @@ def test_real_usdc_end_to_end_fill(capsys):
     decimals = sref.decimals
 
     inputs = []
-    a = _first("alchemy", "*.json", lambda e: alchemy.decode_total_supply(e, decimals))
+    a = _first("alchemy", "*0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48*.json", lambda e: alchemy.decode_total_supply(e, decimals))
     if a:
         inputs.append(a)
-    es = _first("etherscan", "*.json", lambda e: etherscan.extract_supply(e, decimals))
+    es = _first("etherscan", "*0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48*.json", lambda e: etherscan.extract_supply(e, decimals))
     if es:
         inputs.append(es)
     cg = _first("coingecko", "usdc_*.json", coingecko.extract_spot_metrics)
@@ -410,10 +410,10 @@ def _build_usdc_reconciled():
     decimals = sref.decimals
 
     inputs = []
-    a = _first("alchemy", "*.json", lambda e: alchemy.decode_total_supply(e, decimals))
+    a = _first("alchemy", "*0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48*.json", lambda e: alchemy.decode_total_supply(e, decimals))
     if a:
         inputs.append(a)
-    es = _first("etherscan", "*.json", lambda e: etherscan.extract_supply(e, decimals))
+    es = _first("etherscan", "*0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48*.json", lambda e: etherscan.extract_supply(e, decimals))
     if es:
         inputs.append(es)
     cg = _first("coingecko", "usdc_*.json", coingecko.extract_spot_metrics)

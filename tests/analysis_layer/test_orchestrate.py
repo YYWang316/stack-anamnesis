@@ -180,6 +180,52 @@ def test_v3_live_path_scaffold_renders_and_traces(tmp_path):
     assert html.count('<span class="src" ') > 0
 
 
+def _have_usdt_envelopes() -> bool:
+    """True when USDT's freshly-fetched market/on-chain envelopes are on disk."""
+    usdt_contract = "0xdac17f958d2ee523a2206206994597c13d831ec7"
+    return (any((RAW / "coingecko").glob("usdt_*.json"))
+            and any((RAW / "alchemy").glob(f"*{usdt_contract}*.json")))
+
+
+def test_usdt_pattern_isolation_is_data_only():
+    """Binding a second subject is DATA-ONLY: USDT's envelope patterns are isolated
+    by ITS own identifiers (contract-keyed on-chain, slug-keyed aggregators), and
+    SEC is skipped (None) because USDT has no sec_cik — so it can never pick up
+    USDC's contract envelope or Circle's SEC filing."""
+    sref = orchestrate._resolve_or_raise("USDT")
+    c = sref.identifiers["eth_contract"].lower()
+    assert orchestrate._envelope_pattern("alchemy", sref) == f"*{c}*.json"
+    assert orchestrate._envelope_pattern("etherscan", sref) == f"*{c}*.json"
+    assert orchestrate._envelope_pattern("coingecko", sref) == "usdt_*.json"
+    assert orchestrate._envelope_pattern("sec_edgar", sref) is None  # no cik → skip
+
+
+def test_usdt_live_path_smoke_issuer_absent(tmp_path):
+    """SMOKE (not rigorous quality): the live v3 path runs on USDT without error —
+    scaffold + html + bundle produced, the present sub-tables render, issuer
+    financials are correctly ABSENT (no SEC source), and ④.3 + ⑤.1 pass. Skips when
+    USDT envelopes are not on disk (they require a --fetch this environment may lack)."""
+    if not _have_usdt_envelopes():
+        pytest.skip("no USDT envelopes on disk (run: orchestrate USDT --fetch)")
+    import json
+    from analysis_layer.qc.numbers import check_numbers_trace
+
+    path = orchestrate.research("USDT", out_dir=tmp_path, html=True, bundle=True)
+    md = path.read_text(encoding="utf-8")
+    facts = json.loads(path.with_suffix(".facts.json").read_text(encoding="utf-8"))
+
+    # present sub-tables render; issuer financials absent (USDT has no SEC issuer)
+    assert "**Spot metrics**" in md and "**Supply momentum**" in md
+    assert "**Issuer financials**" not in md
+    assert facts["issuer_financials"] is None
+    assert "sec_edgar" not in facts["sources"]
+    # NO cross-subject contamination from USDC/Circle
+    assert "Circle" not in md and "0xA0b86991" not in md
+    # ⑤.1 traces clean + ④.3 passed (html written only on pass)
+    assert check_numbers_trace(md, facts) == []
+    assert path.with_suffix(".html").exists()
+
+
 def test_research_is_deterministic_in_content(tmp_path):
     """Two runs on the same envelopes → byte-identical report CONTENT (only the
     filename's UTC stamp may differ)."""

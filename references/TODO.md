@@ -811,7 +811,19 @@ The template's actual `[MANUAL]` section names (Part 5.5 Stablecoin module, for 
 
 ## TD-046 — multi-subject registry (expand bound subjects beyond USDC)
 
-**Status:** active 2026-06-05 (extracted from the deferred tails of TD-030 + TD-036 + TD-038).
+**Status:** IN PROGRESS — data-only binding generalized + **USDT bound** (2026-06-15). Two subjects now flow end-to-end. Next: a non-stablecoin `subject_type` (chain/L2) + the rigorous cross-subject 2-type validation (deferred testing chunk).
+
+**Done 2026-06-15 (generalization + USDT, smoke-validated).**
+- **Binding is now DATA-ONLY** — adding a subject is one `_REGISTRY` entry, no code. The reality-check (TD-023) found NO USDC/Circle hardcode in live logic (all in docstrings/calibration), but TWO subject-isolation defects that broke data-only binding once a 2nd subject's envelopes share `meta/raw/`: (a) `orchestrate._envelope_pattern` fell back to `*.json` for SEC (no cik) and globbed `*.json` for on-chain — both would grab another subject's envelope. Fixed: the pattern is keyed on the registry's OWN identifiers — on-chain by `eth_contract` (`*<contract>*.json`), SEC by `sec_cik` (absent → `None` → source skipped, never a wildcard); `_extract_for` skips a `None` pattern. (b) `fetch_front` gated the SEC fetch on `issuer` presence; now gated on `sec_cik` (`_sec_subject` → None when absent) so a non-SEC issuer skips SEC end-to-end.
+- **USDT bound** (`"usdt"` registry entry): `stablecoin`, decimals 6, issuer "Tether", eth_contract `0xdAC17F958D2ee523a2206206994597C13D831ec7`, eth_chain ethereum, **no `sec_cik`** (Tether isn't SEC-registered). The per-source coingecko/cmc/defillama ids are GROUNDING only — the fetchers resolve by canonical name (verified: defillama `/stablecoins` lookup, coingecko `/search`, cmc `/quotes?slug=`).
+- **USDT smoke (NOT rigorous quality — deferred):** `orchestrate USDT --fetch --html --bundle` ran clean — 5 sources fetched (defillama/coingecko/coinmarketcap/etherscan/alchemy), **sec_edgar SKIPPED** (no cik). Scaffold + bundle + html produced; spot + supply-momentum sub-tables render, **issuer-financials correctly ABSENT** (`bundle.issuer_financials is None`); ⑤.1 traces clean, ④.3 passes; 1 chart (supply only — no issuer chart, graceful-missing); provenance footer renders. **Zero USDC/Circle contamination** in the USDT output (the isolation fixes verified).
+- **Tests:** `test_resolve_usdt_second_binding_no_sec_cik`, `test_usdt_pattern_isolation_is_data_only`, `test_usdt_live_path_smoke_issuer_absent` (skip-guarded). **★ Multi-subject hardening (TD-023):** adding USDT's envelopes to the shared `meta/raw/` exposed 6 pre-existing tests that globbed `*.json` / `0x*.json` newest-first (single-subject assumption) and silently picked the newer USDT envelope — pinned each to USDC's own contract/slug; one incidental "~2 days apart" cross-check assertion made adaptive (which envelope pair is on disk is incidental). Full suite 494 passed / 4 skipped.
+
+**Remaining (the original scope continues).**
+- **Cross-subject 2-type validation** — the rigorous gate (a non-stablecoin base class proving module stacking switches) is the deferred "testing" chunk. USDT is a 2nd *stablecoin* (same module path) — it proves data-only binding + graceful issuer-absence, NOT a different `subject_type` path.
+- A non-stablecoin `subject_type` (chain / L2) needs a `SOURCES_BY_TYPE` fetcher-set row (currently only `"stablecoin"`) + the token-schema work (TD-017).
+
+**Status (historical):** active 2026-06-05 (extracted from the deferred tails of TD-030 + TD-036 + TD-038).
 
 **What it is.** Expand the subjects bound in `analysis_layer/resolvers/subject_ref.py` + its registry beyond USDC — next stablecoins (USDT, DAI, PYUSD, …), then chains / tokens. Each addition is a DATA edit: every binding (decimals · per-source ids · contract + chain · issuer + CIK) harvested from and cross-checked against a real on-disk envelope (`meta/raw/<source>/`), per the TD-030 grounding rule.
 

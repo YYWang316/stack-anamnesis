@@ -67,6 +67,28 @@ _REGISTRY: Dict[str, SubjectRef] = {
             "sec_cik": "0001876042",
         },
     ),
+    # USDT (Tether) — second binding (TD-046). Same stablecoin module path as USDC,
+    # but DELIBERATELY no ``sec_cik``: Tether is NOT an SEC registrant, so the SEC
+    # source is skipped end-to-end (fetch + analysis) and the bundle's
+    # issuer_financials is absent — proving the issuer-financials source is optional,
+    # not assumed. The per-source ids below are GROUNDING only: the fetchers resolve
+    # coingecko / coinmarketcap / defillama BY the canonical name ("USDT"/"Tether"),
+    # so the loadbearing bindings are subject / subject_type / decimals / eth_contract
+    # / eth_chain. eth_contract is the canonical Ethereum-mainnet Tether (6 decimals).
+    "usdt": SubjectRef(
+        subject="USDT",
+        subject_type="stablecoin",
+        decimals=6,
+        issuer="Tether",
+        identifiers={
+            "coingecko": "tether",            # /coins/tether
+            "coinmarketcap": "825",           # ?id=825
+            "defillama": "1",                 # ?stablecoin=1
+            "eth_contract": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+            "eth_chain": "ethereum",          # etherscan ?chainid=1
+            # NB: no sec_cik — Tether is not SEC-registered (issuer financials absent)
+        },
+    ),
 }
 
 

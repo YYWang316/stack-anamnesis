@@ -137,7 +137,9 @@ def test_latest_empty_returns_none():
 # --- real envelope ----------------------------------------------------------
 
 def _latest_stablecoin_envelope() -> dict:
-    candidates = sorted(DEFILLAMA_RAW.glob("*.json"), reverse=True)
+    # pinned to USDC's own slug so a second subject's envelopes (e.g. usdt_*.json)
+    # in the shared raw dir are not picked (multi-subject isolation, TD-046).
+    candidates = sorted(DEFILLAMA_RAW.glob("usdc_*.json"), reverse=True)
     for path in candidates:
         env = json.loads(path.read_text())
         if isinstance(env.get("raw_response"), list) and env["raw_response"]:

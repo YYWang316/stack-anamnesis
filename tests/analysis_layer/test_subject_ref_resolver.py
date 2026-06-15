@@ -66,6 +66,23 @@ def test_resolve_usdc_returns_subject_ref_with_expected_bindings():
     assert ids["sec_cik"] == "0001876042"
 
 
+def test_resolve_usdt_second_binding_no_sec_cik():
+    """USDT is bound DATA-ONLY (TD-046) — same stablecoin path as USDC, but with NO
+    sec_cik (Tether is not SEC-registered), so the issuer-financials source is
+    optional, not assumed."""
+    ref = subject_ref.resolve_subject("USDT")
+    assert isinstance(ref, SubjectRef)
+    assert ref.subject == "USDT"
+    assert ref.subject_type == "stablecoin"
+    assert ref.decimals == 6
+    assert ref.issuer == "Tether"
+    ids = ref.identifiers
+    assert ids["coingecko"] == "tether"
+    assert ids["eth_contract"] == "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+    assert ids["eth_chain"] == "ethereum"
+    assert "sec_cik" not in ids   # deliberately absent → SEC skipped end-to-end
+
+
 def test_lookup_is_case_insensitive():
     ref = subject_ref.resolve_subject("USDC")
     assert subject_ref.resolve_subject("usdc") == ref
@@ -107,11 +124,13 @@ def test_defillama_id_matches_real_envelope():
 def test_eth_contract_and_chain_match_real_envelopes():
     ids = subject_ref.resolve_subject("USDC").identifiers
     # On-chain contract: the Alchemy / Etherscan 0x-form envelope ``subject`` is
-    # the contract address. Compare case-insensitively (checksum casing differs).
-    onchain = _newest_envelope("alchemy", "0x*.json")
+    # the contract address. Glob USDC's OWN contract (a shared raw dir may hold a
+    # second subject's 0x… envelopes, e.g. USDT). Compare case-insensitively.
+    c = ids["eth_contract"].lower()
+    onchain = _newest_envelope("alchemy", f"*{c}*.json")
     assert onchain["subject"].lower() == ids["eth_contract"].lower()
     # Chain: the Etherscan endpoint carries ?chainid=1 == Ethereum mainnet.
-    es = _newest_envelope("etherscan", "0x*.json")
+    es = _newest_envelope("etherscan", f"*{c}*.json")
     m = re.search(r"[?&]chainid=(\d+)", es["endpoint"])
     assert m is not None and m.group(1) == "1"  # chainid 1 == ids["eth_chain"]
     assert ids["eth_chain"] == "ethereum"

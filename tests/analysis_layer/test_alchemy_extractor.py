@@ -94,9 +94,13 @@ def test_is_contract_missing_returns_none():
 # --- real envelope ----------------------------------------------------------
 
 def _latest_token_envelope() -> dict:
-    """The most-recent Alchemy envelope that actually carries an eth_call read
-    (i.e. a token/issuer envelope, not a chain-level one)."""
-    candidates = sorted(ALCHEMY_RAW.glob("*.json"), reverse=True)
+    """The most-recent USDC Alchemy envelope that carries an eth_call read (a
+    token/issuer envelope, not a chain-level one). Pinned to USDC's OWN contract so
+    a second subject's envelopes (e.g. USDT) in the shared raw dir are not picked."""
+    candidates = sorted(
+        ALCHEMY_RAW.glob("*0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48*.json"),
+        reverse=True,
+    )
     for path in candidates:
         env = json.loads(path.read_text())
         if "eth_call" in env.get("raw_response", {}):

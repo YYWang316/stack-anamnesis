@@ -138,21 +138,30 @@ SOURCE_EXTRACTORS: "Dict[str, Callable[[Mapping, SubjectRef], List[ExtractedValu
 }
 
 
-def _envelope_pattern(source: str, sref: SubjectRef) -> str:
-    """Glob a source's envelope dir uses for THIS subject (mirrors the tests).
+def _envelope_pattern(source: str, sref: SubjectRef) -> Optional[str]:
+    """Glob a source's envelope dir uses for THIS subject — keyed on the registry's
+    OWN identifiers so a second subject's envelopes are never picked up. Subject
+    isolation is what makes binding DATA-ONLY (a new registry entry, no code).
 
-    The on-chain sources (Alchemy / Etherscan) key their files by contract
-    address / chain, so the test globs ``*.json`` and relies on the extractor to
-    skip non-matching envelopes; the aggregator-keyed sources key by the
-    subject's own slug (``usdc_*.json``); SEC keys by the issuer's CIK.
+    Returns ``None`` when the subject lacks a binding a source REQUIRES, so that
+    source is SKIPPED entirely rather than falling back to a wildcard that would
+    match another subject's envelope:
+
+      * on-chain (Alchemy / Etherscan) — keyed by the subject's own
+        ``eth_contract`` (the fetchers name these envelopes by contract); no
+        contract → skip (a token with no on-chain read).
+      * SEC EDGAR — keyed by ``sec_cik``; absent → skip (a non-SEC-registered
+        issuer like Tether has no CIK, so it must NOT grab another issuer's filing).
+      * aggregator sources — keyed by the subject's own slug (``usdc_*.json``).
     """
-    slug = sref.subject.lower()
+    ids = sref.identifiers or {}
     if source in ("alchemy", "etherscan"):
-        return "*.json"
+        contract = ids.get("eth_contract")
+        return f"*{contract.lower()}*.json" if contract else None
     if source == "sec_edgar":
-        cik = (sref.identifiers or {}).get("sec_cik")
-        return f"*cik{cik}*.json" if cik else "*.json"
-    return f"{slug}_*.json"
+        cik = ids.get("sec_cik")
+        return f"*cik{cik}*.json" if cik else None
+    return f"{sref.subject.lower()}_*.json"
 
 
 # --------------------------------------------------------------------------- #
@@ -178,6 +187,8 @@ def _newest_defillama_envelope(raw_dir: Path, sref: SubjectRef) -> Optional[Mapp
     """The newest DefiLlama envelope for the subject, or None (for the change
     derivation, which needs the raw series envelope — not just its latest point)."""
     pattern = _envelope_pattern("defillama", sref)
+    if pattern is None:
+        return None
     return next(_iter_envelopes_newest(raw_dir, "defillama", pattern), None)
 
 
@@ -207,6 +218,8 @@ def _extract_for(sref: SubjectRef, raw_dir: Path):
     loaded: List[str] = []
     for source, adapter in SOURCE_EXTRACTORS.items():
         pattern = _envelope_pattern(source, sref)
+        if pattern is None:
+            continue  # subject lacks this source's required binding → skip cleanly
         values: List[ExtractedValue] = []
         for env in _iter_envelopes_newest(raw_dir, source, pattern):
             values = adapter(env, sref)
