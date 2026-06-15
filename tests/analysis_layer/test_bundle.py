@@ -44,7 +44,7 @@ def _have_usdc_envelopes() -> bool:
 def _build_usdc_bundle():
     """Build the USDC facts bundle from the REAL on-disk envelopes (the same
     reconciled + supply_change the orchestrator feeds the report)."""
-    _md, sref, sources_loaded, reconciled, supply_change, _notes = (
+    _md, sref, sources_loaded, reconciled, supply_change, _notes, _facts = (
         orchestrate.build_report("USDC", raw_dir=RAW)
     )
     return build_facts_bundle(

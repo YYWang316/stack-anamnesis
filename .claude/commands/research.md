@@ -21,8 +21,9 @@ python3 -m analysis_layer.orchestrate "$ARGUMENTS" --bundle
 ```
 
 From the stdout, capture the two paths it prints:
-- `report written to: <scaffold>.md` — the scaffold (Part 5 numbers filled, `[MANUAL]`
-  slots flagged, `Auto Evidence Table` appended).
+- `report written to: <scaffold>.md` — the v3 scaffold: the **2a filler has placed the
+  machine facts table at `<!-- MODULE: metrics -->`**; the remaining `<!-- MODULE: … -->`
+  anchors await the writer's narrative.
 - `bundle written to: <bundle>.facts.json` — the facts bundle (the writer's ONLY
   source of numbers).
 
@@ -37,15 +38,17 @@ file contents — the agent has Read and loads them itself.
 
 Prompt to the subagent (fill in the paths):
 
-> You are the crypto-report-writer. Read the facts bundle at `<abs bundle .facts.json>`
-> and the scaffold report at `<abs scaffold .md>`. Following your brief, write the
-> Tier-1 narrative (thesis, 1.3 stack positioning, 1.4 Evidence Table, 1.5 Data
-> Availability, Part 3/4, the 5.5 KEY SIGNAL verdict + each subsection's 核心分析问题,
-> Part 6 competitive, Part 7 filters, Part 8 Path C valuation, Part 9, Part 11.1
-> Position + 11.2 track list) into the scaffold. Take every number ONLY from the facts
-> bundle; leave the `[AUTO ✓ FILLED]` / `[SEMI-AUTO ✓ COMPUTED]` numbers untouched;
-> leave every `[MANUAL]` / `UNFILLED [AUTO]` / `NEEDS HUMAN REVIEW` slot flagged; do
-> not edit the Auto Evidence Table. Return ONLY the complete report markdown, no
+> You are the crypto-report-writer. Read the facts bundle at `<abs bundle .facts.json>`,
+> the v3 scaffold at `<abs scaffold .md>`, and your authority the analysis playbook at
+> `references/playbooks/analysis_playbook.md`. Follow your brief's playbook-driven flow:
+> read `subject_type` → classify (§I) → stack base + add-on modules (§II.0) → inject each
+> at its matching `<!-- MODULE: … -->` anchor (dock the KEY SIGNAL verdict + A–H analysis
+> at `<!-- MODULE: metrics-analysis -->`; leave `<!-- MODULE: charts -->` in place) → apply
+> the §III primitives + §IV caps → strip coaching. The 2a filler has ALREADY placed every
+> machine number in the Part 5 facts table — REFERENCE and interpret those figures, take
+> every number ONLY from the facts bundle, never introduce a number absent from it, and
+> leave every `[MANUAL]` slot flagged. With only the supply leg present, keep the KEY
+> SIGNAL verdict PROVISIONAL and tick NO row. Return ONLY the complete report markdown, no
 > preamble and no code fences.
 
 The agent's final message is the filled report markdown.
@@ -86,10 +89,19 @@ violations and stop.
 
 ## 5. Render HTML (same renderer as orchestrate --html)
 
-Render the FINAL markdown (not the scaffold) through the existing renderer:
+Render the FINAL markdown through the renderer, **passing the facts bundle as `facts=`**
+so the ④.2 inline-SVG charts AND the TD-051 provenance (source/as-of tooltips + the
+Data Sources footer) render — same as `orchestrate --html`:
 
 ```bash
-python3 -c "import pathlib; from analysis_layer.render.html import render_html; p=pathlib.Path('<abs final .report.md>'); h=p.with_suffix('.html'); h.write_text(render_html(p.read_text(encoding='utf-8')), encoding='utf-8'); print('html written to:', h)"
+python3 -c "import json, pathlib; from analysis_layer.render.html import render_html; p=pathlib.Path('<abs final .report.md>'); facts=json.loads(pathlib.Path('<abs bundle .facts.json>').read_text(encoding='utf-8')); h=p.with_suffix('.html'); h.write_text(render_html(p.read_text(encoding='utf-8'), facts=facts), encoding='utf-8'); print('html written to:', h)"
+```
+
+Optionally run the ④.3 HTML-integrity gate over the output (fail-closed; the live path
+is calibrated to pass):
+
+```bash
+python3 -c "import json, pathlib; from analysis_layer.render.html import render_html; from analysis_layer.render.validate import validate_report_html; p=pathlib.Path('<abs final .report.md>'); facts=json.loads(pathlib.Path('<abs bundle .facts.json>').read_text(encoding='utf-8')); v=validate_report_html(render_html(p.read_text(encoding='utf-8'), facts=facts), facts_present=True); print('④.3:', 'PASS' if not v else v)"
 ```
 
 ## 6. Report the paths

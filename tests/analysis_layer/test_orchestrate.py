@@ -25,6 +25,8 @@ from analysis_layer import orchestrate
 ROOT = Path(__file__).resolve().parents[2]
 RAW = ROOT / "meta" / "raw"
 TEMPLATE_V14 = ROOT / "references" / "templates" / "crypto_research_v1.3.md"
+TEMPLATE_V2 = ROOT / "references" / "templates" / "crypto_research_v2.md"
+TEMPLATE_V3 = ROOT / "references" / "templates" / "crypto_research_v3.md"
 
 
 def _have_usdc_envelopes() -> bool:
@@ -49,13 +51,16 @@ def test_unresolvable_subject_raises_clear_error(tmp_path):
 
 
 def test_real_usdc_end_to_end(tmp_path, capsys):
-    """★ research("USDC") → the clean stablecoin report + Circle SEC facts."""
-    if not TEMPLATE_V14.exists():
-        pytest.skip("v1.4 template absent")
+    """★ the LEGACY v2 pipeline e2e — pinned to the v2 template (still supported via
+    --template). research(template=v2) → the clean stablecoin report + Circle SEC
+    facts. (The live default is now v3; its scaffold is covered by
+    test_real_usdc_v3_default_scaffold below.)"""
+    if not TEMPLATE_V2.exists():
+        pytest.skip("v2 template absent")
     if not _have_usdc_envelopes():
         pytest.skip("no real USDC envelopes on disk")
 
-    path = orchestrate.research("USDC", out_dir=tmp_path)
+    path = orchestrate.research("USDC", out_dir=tmp_path, template_path=TEMPLATE_V2)
     assert path.exists() and path.parent == tmp_path
     md = path.read_text(encoding="utf-8")
 
@@ -103,6 +108,76 @@ def test_real_usdc_end_to_end(tmp_path, capsys):
     with capsys.disabled():
         print(f"\n=== orchestrate e2e: {path.relative_to(ROOT) if path.is_relative_to(ROOT) else path} ===")
         print("clean stablecoin report + sec_edgar Circle facts present")
+
+
+def test_real_usdc_v3_default_scaffold(tmp_path):
+    """★ the LIVE path — research("USDC") on the DEFAULT (v3) template auto-produces
+    the scaffold: the machine facts table injected at <!-- MODULE: metrics -->, the
+    writer's MODULE anchors left intact, and NO legacy v2 [AUTO]/Evidence-Table
+    artifacts (those belong to the v2 fill path)."""
+    if not TEMPLATE_V3.exists():
+        pytest.skip("v3 skeleton absent")
+    if not _have_usdc_envelopes():
+        pytest.skip("no real USDC envelopes on disk")
+
+    # default template is now v3 — no template_path override
+    path = orchestrate.research("USDC", out_dir=tmp_path, bundle=True)
+    md = path.read_text(encoding="utf-8")
+
+    # the 2a filler placed the machine facts table (subject-agnostic sub-tables)
+    assert "**Spot metrics**" in md
+    assert "**Supply momentum**" in md
+    assert "**Issuer financials** (Circle · FY2025)" in md
+    # machine numbers present (a spot-check the ⑤.1 gate would also enforce)
+    assert "$2.75B" in md and "-1.62%" in md and "#6" in md
+    # the metrics anchor was CONSUMED; the writer's anchors remain for the narrative
+    import re as _re
+    assert not _re.search(r"(?m)^<!-- MODULE: metrics -->[ \t]*$", md)
+    for anchor in ("metrics-analysis", "mechanism", "comparison-matrix",
+                   "valuation", "risk-rows", "thesis-breakers", "charts"):
+        assert f"<!-- MODULE: {anchor} -->" in md
+    # the legacy v2 fill artifacts must NOT appear on the v3 path
+    assert "Auto Evidence Table" not in md
+    assert "[AUTO module-aware]" not in md
+    # the bundle was written next to the .md (same stem)
+    assert path.with_suffix(".facts.json").exists()
+
+
+def test_v3_live_path_scaffold_renders_and_traces(tmp_path):
+    """★ the LIVE path end-to-end (deterministic half): research("USDC", html=True,
+    bundle=True) on the default v3 template auto-produces the scaffold .md + .html +
+    .facts.json; the HTML write is fail-closed behind ④.3 (so its existence proves
+    ④.3 passed), the scaffold carries every machine number (⑤.1 traces clean), and
+    the charts + provenance render from facts=. (The writer's narrative half needs
+    the LLM subagent and is exercised by the /research command, not pytest.)"""
+    if not TEMPLATE_V3.exists():
+        pytest.skip("v3 skeleton absent")
+    if not _have_usdc_envelopes():
+        pytest.skip("no real USDC envelopes on disk")
+    import json
+    from analysis_layer.qc.numbers import check_numbers_trace
+
+    path = orchestrate.research("USDC", out_dir=tmp_path, html=True, bundle=True)
+    html_path = path.with_suffix(".html")
+    bundle_path = path.with_suffix(".facts.json")
+    # ④.3 fail-closed: _run RAISES before writing the .html if validation fails, so
+    # the file existing IS the proof the gate passed.
+    assert html_path.exists()
+    assert bundle_path.exists()
+
+    # the 2a filler placed the machine facts table
+    md = path.read_text(encoding="utf-8")
+    assert "**Spot metrics**" in md and "**Issuer financials**" in md
+
+    # ⑤.1: every machine value traces into the scaffold
+    facts = json.loads(bundle_path.read_text(encoding="utf-8"))
+    assert check_numbers_trace(md, facts) == []
+
+    # charts (④.2) + provenance (TD-051) rendered from facts=
+    html = html_path.read_text(encoding="utf-8")
+    assert 'class="chart-at-glance"' in html and html.count("<svg") == 2
+    assert 'class="data-sources"' in html
+    assert html.count('<span class="src" ') > 0
 
 
 def test_research_is_deterministic_in_content(tmp_path):

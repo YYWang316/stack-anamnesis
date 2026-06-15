@@ -40,14 +40,21 @@ from analysis_layer.derivations.supply_change import compute_supply_change
 from analysis_layer.extractors import (
     alchemy, coingecko, coinmarketcap, defillama, etherscan, sec_edgar,
 )
-from analysis_layer.fillers.fill import fill
+from analysis_layer.fillers.fill import fill, fill_metrics_module
 from analysis_layer.resolvers.subject_ref import resolve_subject
 
 ROOT = Path(__file__).resolve().parents[1]
-# Live template: v2 — the structural reorg (M1–M5) + rigor pass (R1–R5) of the
-# v1.4 content. Predecessors crypto_research_v1.3.md (SOP v1.4) and v1.2.md remain
-# on disk as archived, still-readable fixtures (the filler unit test pins to v1.3).
-DEFAULT_TEMPLATE = ROOT / "references" / "templates" / "crypto_research_v2.md"
+# Live template: v3 — the separation-of-concerns skeleton (TD-050 go-live). The
+# orchestrator places the machine numbers (the 2a filler renders the facts bundle
+# into the facts table at <!-- MODULE: metrics -->); the playbook-driven writer
+# (the /research subagent) injects the narrative at the remaining MODULE anchors.
+# v2 (crypto_research_v2.md) and the v1.x fixtures remain on disk; passing one back
+# in via --template re-runs the legacy [AUTO]-slot fill() path (still supported).
+DEFAULT_TEMPLATE = ROOT / "references" / "templates" / "crypto_research_v3.md"
+# A v3 skeleton is recognised by the machine-metrics injection anchor (v2 / v1.x
+# templates have no MODULE anchors), so the build path is chosen by template CONTENT
+# — not hard-coded to the default — and an explicit --template still routes correctly.
+_V3_MARKER = "<!-- MODULE: metrics -->"
 DEFAULT_RAW_DIR = "meta/raw"
 DEFAULT_OUT_DIR = "meta/reports"
 
@@ -249,6 +256,12 @@ def _as_dir(value: "str | Path") -> Path:
     return p if p.is_absolute() else ROOT / p
 
 
+def _is_v3_skeleton(template_text: str) -> bool:
+    """True for a v3 separation-of-concerns skeleton (carries the machine-metrics
+    MODULE anchor); False for the v2 / v1.x [AUTO]-slot templates."""
+    return _V3_MARKER in template_text
+
+
 def build_report(
     subject: str,
     *,
@@ -256,15 +269,23 @@ def build_report(
     mode: str = "subject_driven",
     template_path: "str | Path" = DEFAULT_TEMPLATE,
     raw_dir: "str | Path" = DEFAULT_RAW_DIR,
-) -> "tuple[str, SubjectRef, List[str], List[ReconciledValue], List[ReconciledValue], List[str]]":
-    """Run the PURE pipeline and return the report markdown + metadata.
+) -> "tuple[str, SubjectRef, List[str], List[ReconciledValue], List[ReconciledValue], List[str], dict]":
+    """Run the PURE pipeline and return the report markdown + metadata + facts bundle.
 
     Does everything :func:`research` does EXCEPT writing the file — so callers
     that want the markdown (or the determinism test) need not touch disk.
     Returns ``(markdown, subject_ref, sources_loaded, reconciled, supply_change,
-    notes)``: the reconciled SPOT facts and the supply-momentum derivations are
-    kept SEPARATE (the markdown sees them merged; the facts bundle, ①, wants them
-    classified) — the markdown is built from their concatenation, unchanged.
+    notes, facts)``: the reconciled SPOT facts and the supply-momentum derivations
+    are kept SEPARATE (the facts bundle, ①, wants them classified). The ``facts``
+    bundle is built here ONCE and returned, so :func:`_run` reuses it for the HTML
+    charts / provenance and the ``.facts.json`` write without rebuilding.
+
+    Build-path selection is by template CONTENT (``_is_v3_skeleton``):
+      * **v3 skeleton** — the machine places the numbers: ``fill_metrics_module``
+        renders the facts table at ``<!-- MODULE: metrics -->``; the rest of the
+        narrative is the writer's job (the /research subagent), so the orchestrator
+        emits the SCAFFOLD (facts table + the writer's MODULE anchors left intact).
+      * **v2 / v1.x template** — the legacy module-aware ``[AUTO]``-slot ``fill``.
     """
     sref = _resolve_or_raise(subject)
     # An explicit subject_type arg overrides the registry's (drives module-aware
@@ -289,12 +310,20 @@ def build_report(
         supply_change = list(changes)
         notes.extend(change_notes)
 
-    # 6. fill the template (module-aware, keyed on subject_type + mode). The
-    #    filler sees the merged list — bundle classification (5) is a bundle-only concern.
-    markdown = fill(
-        _as_template_text(template_path), reconciled + supply_change, sref, mode=mode
+    # 6. build the facts bundle ONCE (the machine's authoritative numbers, ①).
+    from analysis_layer.bundle import build_facts_bundle
+    facts = build_facts_bundle(
+        sref, reconciled, supply_change, sources_loaded=sources_loaded,
     )
-    return markdown, sref, sources_loaded, reconciled, supply_change, notes
+
+    # 7. produce the scaffold. v3 → 2a filler (machine places numbers, writer fills
+    #    the narrative anchors later); v2/v1.x → the legacy module-aware fill.
+    template_text = _as_template_text(template_path)
+    if _is_v3_skeleton(template_text):
+        markdown = fill_metrics_module(template_text, facts)
+    else:
+        markdown = fill(template_text, reconciled + supply_change, sref, mode=mode)
+    return markdown, sref, sources_loaded, reconciled, supply_change, notes, facts
 
 
 def _retype(sref: SubjectRef, subject_type: str) -> SubjectRef:
@@ -342,7 +371,7 @@ def _run(
             subject, subject_type=subject_type, freshness_window=freshness_window,
         )
 
-    markdown, sref, sources_loaded, reconciled, supply_change, notes = build_report(
+    markdown, sref, sources_loaded, reconciled, supply_change, notes, facts = build_report(
         subject, subject_type=subject_type, mode=mode,
         template_path=template_path, raw_dir=raw_dir,
     )
@@ -353,15 +382,9 @@ def _run(
     path = out / f"{sref.subject.lower()}_{stamp}.md"
     path.write_text(markdown, encoding="utf-8")
 
-    # The facts bundle (TD-041 ①) is needed by BOTH the HTML charts (④.2, passed
-    # in-memory as facts=) and the .facts.json file write — build it ONCE when
-    # either is requested. PURE: same dict feeds the renderer and the serialiser.
-    facts: Optional[dict] = None
-    if html or bundle:
-        from analysis_layer.bundle import build_facts_bundle
-        facts = build_facts_bundle(
-            sref, reconciled, supply_change, sources_loaded=sources_loaded,
-        )
+    # The facts bundle (TD-041 ①) was built ONCE inside build_report and returned;
+    # it feeds BOTH the HTML charts/provenance (④.2 + TD-051, passed in-memory as
+    # facts=) and the .facts.json file write below. No rebuild here.
 
     html_path: Optional[Path] = None
     if html:
@@ -452,7 +475,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--mode", default="subject_driven",
                         help="subject_driven (Mode A) | news_driven (Mode B)")
     parser.add_argument("--template", default=str(DEFAULT_TEMPLATE),
-                        help="template path (default: v1.4 master SOP)")
+                        help="template path (default: v3 skeleton; pass a v2/v1.x "
+                             "template to use the legacy [AUTO]-slot fill)")
     parser.add_argument("--raw-dir", default=DEFAULT_RAW_DIR)
     parser.add_argument("--out-dir", default=DEFAULT_OUT_DIR)
     parser.add_argument("--fetch", action="store_true",

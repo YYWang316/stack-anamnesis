@@ -5,9 +5,9 @@
 
 ---
 
-# DRAFT — Proposed Writer Runtime Flow `[block C — NOT YET LIVE]`
+# Writer Runtime Flow `[block C — LIVE]`
 
-> GUIDANCE: This is the PROPOSED procedure for the `crypto-report-writer` agent under v3. It is a DRAFT for the go-live phase — do NOT treat it as the live brief yet. The live brief (`.claude/agents/crypto-report-writer.md`) and `orchestrate.DEFAULT_TEMPLATE` still point at v2 and are unchanged. At go-live this block becomes the writer brief's flow.
+> GUIDANCE: This is the LIVE procedure for the `crypto-report-writer` agent under v3 (go-live 2026-06-15, TD-050). `orchestrate.DEFAULT_TEMPLATE` is `crypto_research_v3.md`, the orchestrator's 2a filler places the machine facts table at `<!-- MODULE: metrics -->`, and the live brief (`.claude/agents/crypto-report-writer.md`) drives this flow. The v2 template + legacy `fill()` path remain available via `--template` but are no longer the default.
 
 **Inputs:** the facts bundle `<slug>_<utc>.facts.json` (schema `stack_anamnesis.facts_bundle/v1`) and the v3 skeleton (with the machine-injected facts table already dropped at `<!-- MODULE: metrics -->`).
 
